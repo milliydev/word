@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS courses (
     price TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0,
     published INTEGER NOT NULL DEFAULT 0,
+    is_free INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -260,6 +261,10 @@ def init_db():
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
     conn.commit()
+    if "is_free" not in [r[1] for r in conn.execute("PRAGMA table_info(courses)")]:
+        conn.execute("ALTER TABLE courses ADD COLUMN is_free INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Baza yangilandi: kurslarga 'bepul' belgisi qo'shildi")
     cols = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
     if "email" not in cols:
         # Eski baza: email + parol bilan ro'yxatdan o'tish uchun users jadvalini yangilash
@@ -899,7 +904,7 @@ def api_logout():
 def course_dict(row):
     return {
         "id": row["id"], "title": row["title"], "description": row["description"], "price": row["price"],
-        "order": row["sort_order"], "published": bool(row["published"]),
+        "order": row["sort_order"], "published": bool(row["published"]), "free": bool(row["is_free"]),
         "lessonCount": row["lesson_count"] if "lesson_count" in row.keys() else 0,
     }
 
@@ -927,12 +932,16 @@ def api_courses():
 @app.get("/api/my/courses")
 @login_required
 def api_my_courses():
-    if g.user["status"] != "approved":
+    # Bepul kurslar (saytda ko'rsatilgan) – bloklanmagan har bir o'quvchiga ochiq.
+    # Pullik kurslar – faqat ruxsat berilgan (approved) o'quvchiga, admin ochgan kurslar.
+    if g.user["status"] == "blocked":
         return jsonify({"courses": []})
+    approved = 1 if g.user["status"] == "approved" else 0
     db = get_db()
     rows = db.execute(COURSE_SELECT + """
-        JOIN user_courses uc ON uc.course_id = c.id AND uc.user_id = ?
-        ORDER BY c.sort_order, c.id""", (g.user["id"],)).fetchall()
+        WHERE (c.is_free = 1 AND c.published = 1)
+           OR (? = 1 AND EXISTS (SELECT 1 FROM user_courses uc WHERE uc.course_id = c.id AND uc.user_id = ?))
+        ORDER BY c.sort_order, c.id""", (approved, g.user["id"])).fetchall()
     result = []
     for r in rows:
         c = course_dict(r)
@@ -1039,6 +1048,7 @@ def _course_payload(data):
         "price": clean_text(data.get("price"), 60),
         "sort_order": to_int(data.get("order"), 0),
         "published": 1 if data.get("published") else 0,
+        "is_free": 1 if data.get("free") else 0,
     }, None
 
 
@@ -1057,9 +1067,9 @@ def api_admin_course_create():
         return err(e)
     db = get_db()
     ts = now_iso()
-    cur = db.execute("INSERT INTO courses (title, description, price, sort_order, published, created_at, updated_at) "
-                     "VALUES (?,?,?,?,?,?,?)",
-                     (p["title"], p["description"], p["price"], p["sort_order"], p["published"], ts, ts))
+    cur = db.execute("INSERT INTO courses (title, description, price, sort_order, published, is_free, created_at, updated_at) "
+                     "VALUES (?,?,?,?,?,?,?,?)",
+                     (p["title"], p["description"], p["price"], p["sort_order"], p["published"], p["is_free"], ts, ts))
     audit(g.user["id"], "course_create", cur.lastrowid, p)
     db.commit()
     return jsonify({"id": cur.lastrowid})
@@ -1074,8 +1084,8 @@ def api_admin_course_update(cid):
     db = get_db()
     if db.execute("SELECT 1 FROM courses WHERE id = ?", (cid,)).fetchone() is None:
         return err("Kurs topilmadi.", 404)
-    db.execute("UPDATE courses SET title=?, description=?, price=?, sort_order=?, published=?, updated_at=? WHERE id=?",
-               (p["title"], p["description"], p["price"], p["sort_order"], p["published"], now_iso(), cid))
+    db.execute("UPDATE courses SET title=?, description=?, price=?, sort_order=?, published=?, is_free=?, updated_at=? WHERE id=?",
+               (p["title"], p["description"], p["price"], p["sort_order"], p["published"], p["is_free"], now_iso(), cid))
     audit(g.user["id"], "course_update", cid, p)
     db.commit()
     return jsonify({"ok": True})
@@ -1316,6 +1326,8 @@ a { color: inherit; }
 .icon-box { width: 52px; height: 52px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; }
 
 .course-card .price { font-size: 26px; font-weight: 800; color: var(--white); }
+.course-card .price.free { color: var(--mint); }
+.badge.free { background: var(--mint-soft); color: var(--mint-dark); }
 .course-card .actions { margin-top: auto; padding-top: 8px; }
 .empty-dark { text-align: center; padding: 40px; border-radius: 20px; color: var(--on-dark-muted); }
 
@@ -1709,8 +1721,8 @@ function Landing({ me }) {
               <div className="meta">{c.lessonCount} ta dars</div>
               <h3>{c.title}</h3>
               <p style={{ whiteSpace: "pre-line" }}>{c.description}</p>
-              {c.price && <div className="price">{c.price}</div>}
-              <div className="actions"><a className="btn btn-mint" href={signupHref}>Kursga yozilish</a></div>
+              {c.free ? <div className="price free">Bepul</div> : c.price && <div className="price">{c.price}</div>}
+              <div className="actions"><a className="btn btn-mint" href={signupHref}>{c.free ? "Bepul boshlash" : "Kursga yozilish"}</a></div>
             </article>
           ))}
         </div>
@@ -1949,7 +1961,7 @@ function Cabinet({ me, logout }) {
   useEffect(() => {
     if (!me) { go("#/kirish"); return; }
     if (me.role === "admin") { goAdmin(); return; }
-    if (me.status === "approved") api("/api/my/courses").then(d => setCourses(d.courses)).catch(() => setCourses([]));
+    if (me.status !== "blocked") api("/api/my/courses").then(d => setCourses(d.courses)).catch(() => setCourses([]));
   }, [me]);
   if (!me || me.role === "admin") return null;
 
@@ -1961,14 +1973,19 @@ function Cabinet({ me, logout }) {
   );
 
   let body;
+  let notice = null;
   if (me.status === "pending") {
-    body = <div className="status-card pending"><h2>Arizangiz ko‘rib chiqilmoqda</h2><p>To‘lovingiz tasdiqlangach, admin sizga ruxsat beradi va darslar shu sahifada ochiladi. Savollar bo‘lsa, Telegram orqali yozing: <TgContact />.</p></div>;
-  } else if (me.status !== "approved") {
-    body = <div className={`status-card ${me.status}`}><h2>{me.status === "blocked" ? "Akkauntingiz vaqtincha yopilgan" : "Arizangiz tasdiqlanmadi"}</h2><p>Batafsil ma’lumot uchun bog‘laning: <TgContact />.</p></div>;
+    notice = <div className="status-card pending" style={{ marginBottom: 20 }}><h2>Arizangiz ko‘rib chiqilmoqda</h2><p>To‘lovingiz tasdiqlangach, admin sizga ruxsat beradi va pullik darslar shu sahifada ochiladi. Bepul kurslarni hozirdan ko‘rishingiz mumkin. Savollar bo‘lsa, Telegram orqali yozing: <TgContact />.</p></div>;
+  } else if (me.status === "rejected") {
+    notice = <div className="status-card rejected" style={{ marginBottom: 20 }}><h2>Arizangiz tasdiqlanmadi</h2><p>Batafsil ma’lumot uchun bog‘laning: <TgContact />. Bepul kurslar sizga ochiq.</p></div>;
+  }
+  if (me.status === "blocked") {
+    body = <div className="status-card blocked"><h2>Akkauntingiz vaqtincha yopilgan</h2><p>Batafsil ma’lumot uchun bog‘laning: <TgContact />.</p></div>;
   } else if (courses === null) {
     body = <div className="loading">Kurslar yuklanmoqda…</div>;
   } else if (!courses.length) {
-    body = <div className="status-card pending"><h2>Sizga hali kurs ochilmagan</h2><p>Admin kursga ruxsat bergach, u shu yerda paydo bo‘ladi.</p></div>;
+    body = notice || <div className="status-card pending"><h2>Sizga hali kurs ochilmagan</h2><p>Admin kursga ruxsat bergach, u shu yerda paydo bo‘ladi.</p></div>;
+    notice = null;
   } else {
     const c = courses[Math.min(ci, courses.length - 1)];
     const l = c.lessons[li];
@@ -1976,7 +1993,7 @@ function Cabinet({ me, logout }) {
     body = (
       <>
         <div className="course-pick" role="tablist" aria-label="Kurslaringiz">
-          {courses.map((x, i) => <button key={x.id} className="tab" role="tab" aria-selected={i === ci} onClick={() => { setCi(i); setLi(0); }}>{x.title}</button>)}
+          {courses.map((x, i) => <button key={x.id} className="tab" role="tab" aria-selected={i === ci} onClick={() => { setCi(i); setLi(0); }}>{x.title}{x.free && <> <span className="badge free">Bepul</span></>}</button>)}
         </div>
         <div className="player-layout">
           <div className="player-main">
@@ -2017,7 +2034,7 @@ function Cabinet({ me, logout }) {
   return (
     <>
       <AppHeader me={me} logout={logout} />
-      <main className="wrap page">{head}{body}</main>
+      <main className="wrap page">{head}{notice}{body}</main>
     </>
   );
 }
@@ -2175,7 +2192,7 @@ function AccessModal({ user, courses, notify, onClose, onSaved }) {
   );
 }
 
-const emptyCourse = { title: "", description: "", price: "", order: "", published: false };
+const emptyCourse = { title: "", description: "", price: "", order: "", published: false, free: false };
 const emptyLesson = { title: "", videoUrl: "", duration: "", description: "", order: "" };
 
 function resizeImage(file, max = 800) {
@@ -2307,7 +2324,7 @@ function AdminCourses({ notify }) {
 
   const select = (c) => {
     setSelId(c ? c.id : null);
-    setForm(c ? { title: c.title, description: c.description, price: c.price, order: c.order, published: c.published } : { ...emptyCourse, order: (courses?.length || 0) + 1 });
+    setForm(c ? { title: c.title, description: c.description, price: c.price, order: c.order, published: c.published, free: c.free } : { ...emptyCourse, order: (courses?.length || 0) + 1 });
     setLEditId(null);
     setLessons([]);
     if (c) { loadLessons(c.id); setLForm(emptyLesson); }
@@ -2372,7 +2389,7 @@ function AdminCourses({ notify }) {
               {courses.map(c => (
                 <li key={c.id}><button aria-current={c.id === selId} onClick={() => select(c)}>
                   <span className="no">{c.order}</span>
-                  <span>{c.title}<br /><small style={{ color: "var(--muted)" }}>{c.lessonCount} dars · {c.published ? "saytda" : "yashirin"}</small></span>
+                  <span>{c.title}<br /><small style={{ color: "var(--muted)" }}>{c.lessonCount} dars · {c.published ? "saytda" : "yashirin"}{c.free ? " · bepul" : ""}</small></span>
                 </button></li>
               ))}
             </ol>
@@ -2393,6 +2410,8 @@ function AdminCourses({ notify }) {
               <div className="field"><label htmlFor="cO">Tartib raqami</label><input id="cO" className="input" type="number" min="0" value={form.order} onChange={f("order")} /><span className="hint">Saytda shu tartibda chiqadi</span></div>
             </div>
             <label className="check"><input type="checkbox" checked={!!form.published} onChange={f("published")} /> Saytda ko‘rsatilsin</label>
+            <label className="check"><input type="checkbox" checked={!!form.free} onChange={f("free")} /> Bepul kurs – ro‘yxatdan o‘tgan har bir o‘quvchi ruxsatsiz ko‘ra oladi</label>
+            {form.free && !form.published && <span className="hint">Bepul kurs o‘quvchilarga ko‘rinishi uchun «Saytda ko‘rsatilsin» belgisini ham qo‘ying.</span>}
             <div className="dialog-actions" style={{ justifyContent: "flex-start" }}>
               <button className="btn btn-indigo" disabled={busy}>{selId ? "Saqlash" : "Kursni qo‘shish"}</button>
             </div>
