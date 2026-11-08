@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "KompSavod serverini ishga tushirish",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/server.py",
+      "console": "integratedTerminal",
+      "env": {
+        "ADMIN_PHONE": "+998901234567",
+        "PORT": "8000",
+        "ESKIZ_EMAIL": "",
+        "ESKIZ_PASSWORD": ""
+      }
+    }
+  ]
+}
