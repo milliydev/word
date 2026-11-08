@@ -738,6 +738,7 @@ TEACHER_DEFAULTS = {
     "students": "100+",
     "show": "1",
 }
+DEFAULT_TEACHER_PHOTO = os.path.join(BASE_DIR, "static", "teacher.png")
 TEACHER_LIMITS = {"name": 80, "title": 120, "bio": 1200, "years": 20, "students": 20}
 PHOTO_TYPES = {b"\xff\xd8\xff": ("jpg", "image/jpeg"), b"\x89PNG": ("png", "image/png")}
 
@@ -752,7 +753,11 @@ def teacher_dict():
     t = {k: saved.get(k, v) for k, v in TEACHER_DEFAULTS.items()}
     t["show"] = t["show"] == "1"
     photo = saved.get("photo")
-    t["photoUrl"] = f"/teacher-photo?v={saved.get('photo_v', '0')}" if photo else None
+    if photo:
+        t["photoUrl"] = f"/teacher-photo?v={saved.get('photo_v', '0')}"
+    else:
+        # Admin hali rasm yuklamagan bo'lsa – kod bilan birga keladigan standart rasm
+        t["photoUrl"] = "/teacher-photo?v=default" if os.path.exists(DEFAULT_TEACHER_PHOTO) else None
     return t
 
 
@@ -833,10 +838,11 @@ def api_admin_social_update():
 @app.get("/teacher-photo")
 def teacher_photo():
     photo = _settings("teacher.").get("photo")
-    if not photo or not os.path.exists(os.path.join(DATA_DIR, photo)):
-        return err("Topilmadi.", 404)
-    resp = send_from_directory(DATA_DIR, photo, max_age=86400)
-    return resp
+    if photo and os.path.exists(os.path.join(DATA_DIR, photo)):
+        return send_from_directory(DATA_DIR, photo, max_age=86400)
+    if os.path.exists(DEFAULT_TEACHER_PHOTO):
+        return send_from_directory(os.path.dirname(DEFAULT_TEACHER_PHOTO), os.path.basename(DEFAULT_TEACHER_PHOTO), max_age=86400)
+    return err("Topilmadi.", 404)
 
 
 @app.put("/api/admin/teacher")
