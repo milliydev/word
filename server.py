@@ -611,7 +611,7 @@ def api_register():
 def api_admin_login():
     data = body_json()
     login = str(data.get("login") or "").strip()
-    password = str(data.get("password") or "")
+    password = str(data.get("password") or "").strip()  # nusxalashda ilashib qolgan bo'sh joylar
     ip = client_ip()
     now = time.time()
     with _admin_login_lock:
