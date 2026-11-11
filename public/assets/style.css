@@ -257,3 +257,21 @@ dialog::backdrop { background: rgba(14,18,80,0.55); }
 .upload-progress .bar-fill { height:100%; width:0; background:#2563EB; transition:width .25s; }
 .upload-progress span { font-size:13px; font-weight:700; color:#2563EB; min-width:40px; text-align:right; }
 input[type="file"].input { padding:9px 12px; cursor:pointer; }
+
+/* O'qituvchi bo'limi va ijtimoiy tarmoqlar */
+.teacher { display: grid; grid-template-columns: minmax(220px, 340px) 1fr; gap: 40px; align-items: center; border-radius: 24px; padding: 32px; }
+.teacher img { width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 20px; display: block; }
+.teacher .t-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.teacher h3 { margin: 0; font-size: clamp(26px, 3vw, 36px); font-weight: 800; letter-spacing: -0.5px; }
+.teacher .t-role { color: var(--mint); font-weight: 700; font-size: 18px; }
+.teacher p { margin: 0; color: var(--on-dark-muted); font-size: 18px; white-space: pre-line; }
+.teacher-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.teacher-stats > div { border-radius: 16px; padding: 14px 20px; min-width: 140px; }
+.teacher-stats b { display: block; font-size: 30px; font-weight: 800; color: var(--mint); line-height: 1.1; }
+.teacher-stats span { color: var(--on-dark-muted); font-size: 15px; }
+.socials { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.socials a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 14px; font-weight: 700; text-decoration: none; color: inherit; }
+.socials a:hover, .footer-links a:hover { background: rgba(255,255,255,0.18); }
+.socials svg, .footer-links svg { flex: none; }
+.footer-links a { display: inline-flex; align-items: center; gap: 8px; color: inherit; }
+@media (max-width: 760px) { .teacher { grid-template-columns: 1fr; padding: 20px; gap: 22px; } .teacher img { max-width: 320px; margin: 0 auto; } }
