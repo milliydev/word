@@ -46,7 +46,7 @@ if (!showConfigWarning()) {
 }
 
 function infoBlock(me) {
-  return `<p class="lead">${esc(fmtPhone(me.phone))} · ${esc(me.region)} · ro‘yxatdan o‘tgan sana: ${esc(fmtDate(me.createdAt, false))}</p>`;
+  return `<p class="lead">${esc(me.email || fmtPhone(me.phone))} · ${esc(me.region)} · ro‘yxatdan o‘tgan sana: ${esc(fmtDate(me.createdAt, false))}</p>`;
 }
 
 async function render(me) {

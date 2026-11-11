@@ -120,7 +120,7 @@ function renderUsers() {
   const q = filter.q.toLowerCase().replace(/\s/g, "");
   const list = students.filter(u =>
     (filter.status === "all" || u.status === filter.status) &&
-    (!q || (u.name || "").toLowerCase().replace(/\s/g, "").includes(q) || (u.phone || "").includes(q)));
+    (!q || (u.name || "").toLowerCase().replace(/\s/g, "").includes(q) || (u.email || u.phone || "").toLowerCase().includes(q)));
   const courseName = (id) => courses.find(c => c.id === id)?.title || "o‘chirilgan kurs";
 
   $("#tabBody").innerHTML = `
@@ -132,7 +132,7 @@ function renderUsers() {
     </div>
     <div class="toolbar">
       <label class="sr-only" for="search">Qidirish</label>
-      <input id="search" class="input grow" type="search" placeholder="Ism yoki telefon bo‘yicha qidirish" value="${esc(filter.q)}">
+      <input id="search" class="input grow" type="search" placeholder="Ism yoki email bo‘yicha qidirish" value="${esc(filter.q)}">
       <label class="sr-only" for="statusFilter">Holat</label>
       <select id="statusFilter" class="input" style="width:auto">
         <option value="all">Barchasi</option>
@@ -142,12 +142,12 @@ function renderUsers() {
     </div>
     <div class="table-box">
       <table>
-        <thead><tr><th>Ism</th><th>Telefon</th><th>Hudud</th><th>Ro‘yxatdan o‘tgan</th><th>Oxirgi kirish</th><th>Holat</th><th>Kurslar</th><th>Amallar</th></tr></thead>
+        <thead><tr><th>Ism</th><th>Email</th><th>Hudud</th><th>Ro‘yxatdan o‘tgan</th><th>Oxirgi kirish</th><th>Holat</th><th>Kurslar</th><th>Amallar</th></tr></thead>
         <tbody>
           ${list.length ? list.map(u => `
             <tr>
               <td><b>${esc(u.name)}</b>${u.adminNote ? `<br><small style="color:var(--muted)">${esc(u.adminNote)}</small>` : ""}</td>
-              <td><a href="tel:${esc(u.contactPhone || u.phone)}">${esc(fmtPhone(u.contactPhone || u.phone))}</a>${u.contactPhone && u.contactPhone !== u.phone ? `<br><small style="color:var(--muted)">login: ${esc(fmtPhone(u.phone))}</small>` : ""}</td>
+              <td>${u.email ? `<a href="mailto:${esc(u.email)}">${esc(u.email)}</a>` : esc(fmtPhone(u.phone))}</td>
               <td>${esc(u.region)}</td>
               <td>${esc(fmtDate(u.createdAt))}</td>
               <td>${esc(fmtDate(u.lastLoginAt))}</td>
@@ -186,7 +186,7 @@ async function userAction(act, id) {
 
 function openAccess(u) {
   const dlg = $("#accessDialog");
-  $("#accessWho").textContent = `${u.name} · ${fmtPhone(u.phone)}`;
+  $("#accessWho").textContent = `${u.name} · ${u.email || fmtPhone(u.phone)}`;
   $("#accessNote").value = u.adminNote || "";
   const owned = new Set(u.courses || []);
   $("#accessCourses").innerHTML = courses.length
@@ -218,8 +218,8 @@ function exportCsv(list, courseName) {
     if (/^[=+\-@]/.test(s)) s = "'" + s; // Excel formulasi sifatida ishga tushmasligi uchun
     return `"${s.replace(/"/g, '""')}"`;
   };
-  const rows = [["Ism", "Telefon", "Hudud", "Ro‘yxatdan o‘tgan", "Oxirgi kirish", "Holat", "Kurslar", "Izoh"]]
-    .concat(list.map(u => [u.name, fmtPhone(u.phone), u.region, fmtDate(u.createdAt), fmtDate(u.lastLoginAt),
+  const rows = [["Ism", "Email", "Hudud", "Ro‘yxatdan o‘tgan", "Oxirgi kirish", "Holat", "Kurslar", "Izoh"]]
+    .concat(list.map(u => [u.name, u.email || fmtPhone(u.phone), u.region, fmtDate(u.createdAt), fmtDate(u.lastLoginAt),
       STATUS_LABELS[u.status] || u.status, (u.courses || []).map(courseName).join("; "), u.adminNote || ""]));
   const csv = "\uFEFF" + rows.map(r => r.map(cell).join(";")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
