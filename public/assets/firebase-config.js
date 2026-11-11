@@ -1,12 +1,10 @@
-// Firebase loyihangizning sozlamalari.
-// Firebase Console → Project settings → Your apps → Web app → "SDK setup and configuration"
-// bo'limidan nusxa olib, quyidagi qiymatlar o'rniga qo'ying.
+// Firebase loyihasi: kompsavod-uz
 // Bu kalitlar maxfiy emas: xavfsizlik firestore.rules orqali ta'minlanadi.
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCDccTTDEoTInTZ77luVio7LW-03MKhDGk",
+  authDomain: "kompsavod-uz.firebaseapp.com",
+  projectId: "kompsavod-uz",
+  storageBucket: "kompsavod-uz.firebasestorage.app",
+  messagingSenderId: "19172652708",
+  appId: "1:19172652708:web:2f38640970988dfb81d831"
 };

@@ -6,3 +6,5 @@ server.log
 *.log
 *.bak*
 .DS_Store
+.firebase/
+firebase-debug.log
