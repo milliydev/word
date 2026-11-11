@@ -238,7 +238,19 @@ dialog::backdrop { background: rgba(14,18,80,0.55); }
 }
 
 /* ===== Sharhlar ===== */
-.reviews { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-bottom:24px; }
+.reviews-carousel { position:relative; margin-bottom:24px; }
+.reviews { --rv-cols:3; display:grid; grid-auto-flow:column; grid-template-rows:repeat(2, auto);
+  grid-auto-columns:calc((100% - (var(--rv-cols) - 1) * 16px) / var(--rv-cols));
+  gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; padding:2px; }
+.reviews::-webkit-scrollbar { display:none; }
+.reviews > * { scroll-snap-align:start; min-width:0; }
+.reviews:has(> .empty-dark) { display:block; }
+.rv-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:2; width:42px; height:42px; border-radius:50%;
+  border:0; cursor:pointer; font-size:26px; line-height:1; display:flex; align-items:center; justify-content:center; color:inherit; }
+.rv-nav[hidden] { display:none; }
+.rv-prev { left:-14px; } .rv-next { right:-14px; }
+@media (max-width: 960px) { .reviews { --rv-cols:2; } }
+@media (max-width: 640px) { .reviews { --rv-cols:1; } .rv-prev { left:-6px; } .rv-next { right:-6px; } }
 .review { display:flex; flex-direction:column; gap:10px; }
 .review-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .review-name { font-weight:700; }
