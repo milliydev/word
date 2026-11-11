@@ -135,12 +135,8 @@
       <h2 id="sharhlar-h">Sharhlar</h2>
       <p>O‘quvchilarimizning fikrlari. Siz ham o‘z fikringizni qoldiring — ro‘yxatdan o‘tish shart emas.</p>
     </div>
-    <div class="reviews-carousel">
-      <button class="rv-nav rv-prev glass" type="button" id="rvPrev" aria-label="Oldingi sharhlar">‹</button>
-      <div class="reviews" id="reviewList">
-        <div class="empty-dark glass">Sharhlar yuklanmoqda…</div>
-      </div>
-      <button class="rv-nav rv-next glass" type="button" id="rvNext" aria-label="Keyingi sharhlar">›</button>
+    <div class="reviews-marquee" id="reviewList">
+      <div class="wrap"><div class="empty-dark glass">Sharhlar yuklanmoqda…</div></div>
     </div>
     <form class="review-form card-glass glass" id="reviewForm" novalidate>
       <h3>Fikringizni qoldiring</h3>
@@ -188,66 +184,40 @@ starsBox.innerHTML = [1, 2, 3, 4, 5].map(n => `<button type="button" data-star="
 starsBox.querySelectorAll("button").forEach(b => b.addEventListener("click", () => setRating(+b.dataset.star)));
 setRating(5);
 const starHtml = (n) => "★★★★★☆☆☆☆☆".slice(5 - (n || 5), 10 - (n || 5));
-function renderReviews(list) {
-  if (!list.length) { reviewList.innerHTML = `<div class="empty-dark glass">Hali sharh yo‘q. Birinchi bo‘lib fikr qoldiring!</div>`; rvStart(); return; }
-  reviewList.innerHTML = list.map(r => `
+const reviewCard = (r) => `
     <article class="review card-glass glass">
       <div class="review-top"><span class="review-name">Anonim</span><span class="stars" aria-label="${esc(r.rating)} / 5">${starHtml(r.rating)}</span></div>
       <p>${esc(r.text)}</p>
       <small class="review-date">${esc(fmtDate(r.createdAt, false))}</small>
-    </article>`).join("");
-  reviewList.scrollLeft = 0;
-  rvStart();
+    </article>`;
+function renderReviews(list) {
+  if (!list.length) { reviewList.innerHTML = emptyMsg("Hali sharh yo‘q. Birinchi bo‘lib fikr qoldiring!"); return; }
+  // Ikki qatorga bo'lamiz (bitta sharh bo'lsa, ikkalasida ham chiqadi)
+  const rows = list.length === 1 ? [list, list] : [list.filter((_, i) => i % 2 === 0), list.filter((_, i) => i % 2 === 1)];
+  reviewList.innerHTML = rows.map((row, ri) => {
+    // Ekran to'lishi uchun kamida ~8 ta karta bo'lguncha takrorlaymiz
+    let items = row.slice();
+    while (!reduceMotion && items.length < 8) items = items.concat(row);
+    const half = items.map(reviewCard).join("");
+    const secs = Math.max(30, items.length * 6);
+    const track = reduceMotion ? half : half + half.replace(/<article /g, '<article aria-hidden="true" ');
+    return `<div class="rv-row ${ri ? "rv-right" : "rv-left"}"><div class="rv-track" style="--rv-dur:${secs}s">${track}</div></div>`;
+  }).join("");
 }
-/* Karusel: 2 qator, avtomatik aylanadi */
-const rvPrev = document.getElementById("rvPrev"), rvNext = document.getElementById("rvNext");
+/* Karusel: butun kenglikda, 2 qator, uzluksiz aylanadi */
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-let rvTimer = null, rvPaused = false;
-function rvStep() {
-  const card = reviewList.querySelector(".review");
-  if (!card) return 0;
-  return card.getBoundingClientRect().width + parseFloat(getComputedStyle(reviewList).columnGap || 16);
-}
-function rvMove(dir) {
-  const max = reviewList.scrollWidth - reviewList.clientWidth;
-  if (max <= 2) return;
-  const step = rvStep();
-  let to = reviewList.scrollLeft + dir * step;
-  if (dir > 0 && reviewList.scrollLeft >= max - 2) to = 0;
-  else if (dir < 0 && reviewList.scrollLeft <= 2) to = max;
-  reviewList.scrollTo({ left: to, behavior: reduceMotion ? "auto" : "smooth" });
-}
-function rvUpdateNav() {
-  const scrollable = reviewList.scrollWidth - reviewList.clientWidth > 2;
-  rvPrev.hidden = rvNext.hidden = !scrollable;
-}
-function rvStart() {
-  clearInterval(rvTimer);
-  rvUpdateNav();
-  if (reduceMotion) return;
-  rvTimer = setInterval(() => { if (!rvPaused && !document.hidden) rvMove(1); }, 4000);
-}
-rvPrev.addEventListener("click", () => { rvMove(-1); rvStart(); });
-rvNext.addEventListener("click", () => { rvMove(1); rvStart(); });
-const carousel = reviewList.parentElement;
-carousel.addEventListener("mouseenter", () => rvPaused = true);
-carousel.addEventListener("mouseleave", () => rvPaused = false);
-carousel.addEventListener("focusin", () => rvPaused = true);
-carousel.addEventListener("focusout", () => rvPaused = false);
-reviewList.addEventListener("touchstart", () => rvPaused = true, { passive: true });
-reviewList.addEventListener("touchend", () => setTimeout(() => rvPaused = false, 3000), { passive: true });
-window.addEventListener("resize", rvUpdateNav);
+const emptyMsg = (t) => `<div class="wrap"><div class="empty-dark glass">${t}</div></div>`;
 
 async function loadReviews() {
   try {
     const rs = await getDocs(query(collection(db, "reviews"), orderBy("createdAt", "desc")));
     renderReviews(rs.docs.map(d => ({ id: d.id, ...d.data() })));
-  } catch (e) { console.error(e); reviewList.innerHTML = `<div class="empty-dark glass">Sharhlarni yuklab bo‘lmadi.</div>`; }
+  } catch (e) { console.error(e); reviewList.innerHTML = emptyMsg("Sharhlarni yuklab bo‘lmadi."); }
 }
 
 if (showConfigWarning()) {
   grid.innerHTML = `<div class="empty-dark glass">Kurslar Firebase ulangandan keyin shu yerda chiqadi.</div>`;
-  reviewList.innerHTML = `<div class="empty-dark glass">Sharhlar Firebase ulangandan keyin shu yerda chiqadi.</div>`;
+  reviewList.innerHTML = emptyMsg("Sharhlar Firebase ulangandan keyin shu yerda chiqadi.");
   reviewForm.addEventListener("submit", (e) => e.preventDefault());
 } else {
   loadReviews();
