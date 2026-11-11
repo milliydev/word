@@ -1,60 +1,61 @@
-# KompSavod – bitta faylli server
+# KompSavod sayti – ishga tushirish qo‘llanmasi
 
-Butun sayt bitta `server.py` faylida: backend (Python, Flask) va frontend (React).
-Ma'lumotlar `data/kompsavod.db` (SQLite) bazasida doimiy saqlanadi, har 6 soatda `data/backups/` papkasiga avtomatik zaxira nusxa olinadi.
+## Saytda nimalar bor
 
-## VS Code'da ochish (eng oson yo'l)
+- **Bosh sahifa** (`/`): dizayndagi sahifa, kurslar ro‘yxati admin paneldan avtomatik chiqadi.
+- **Kirish / ro‘yxatdan o‘tish** (`/kirish`): telefon raqam → SMS kod → (yangi bo‘lsa) ism va hudud. Raqam SMS bilan tasdiqlanadi, soxta raqam bilan kirib bo‘lmaydi.
+- **O‘quvchi kabineti** (`/kabinet`): ruxsat kutayotgan, rad etilgan yoki ruxsat berilgan holatni ko‘rsatadi; ruxsat berilgan kurslarning video darslari shu yerda.
+- **Admin panel** (`/admin`): barcha o‘quvchilar (ism, telefon, hudud, ro‘yxatdan o‘tgan va oxirgi kirgan vaqti), ruxsat berish / rad etish / bloklash, qaysi kursga ruxsat berilishini tanlash, Excel’ga yuklab olish, kurs va darslarni qo‘shish va tahrirlash.
 
-1. Arxivni oching (Extract) va VS Code'da **File → Open Folder** orqali `kompsavod` papkasini tanlang.
-2. VS Code taklif qilgan **Python** kengaytmasini o'rnating.
-3. `.vscode/launch.json` faylida `ADMIN_PHONE` qiymatiga o'z raqamingizni yozing.
-4. Terminalda (Ctrl + `) bir marta yozing: `pip install -r requirements.txt`
-5. **F5** tugmasini bosing – server ishga tushadi. Brauzerda http://localhost:8000 ni oching.
+## Ma’lumotlar xavfsizligi
 
-Yoki Windows'da `ishga_tushirish.bat` faylini ikki marta bosing (unda ham raqamingizni yozib qo'ying).
+- Barcha ma’lumotlar Google’ning **Firebase Firestore** bazasida saqlanadi.
+- `firestore.rules` qoidalari bo‘yicha o‘quvchi va kurslarni **hech kim o‘chira olmaydi**, faqat holatini o‘zgartirish yoki yashirish mumkin.
+- O‘quvchi o‘ziga ruxsat yoki admin huquqini bera olmaydi, boshqalarning ma’lumotini ko‘ra olmaydi.
+- Video havolalarni faqat ruxsat berilgan o‘quvchi ko‘radi.
+- Qo‘shimcha himoya uchun: Firestore → **Disaster recovery** bo‘limida avtomatik zaxira nusxa (backup) yoqing va vaqti-vaqti bilan admin paneldan “Excel’ga yuklab olish” qiling.
 
-## 1. Kompyuterda ishga tushirish (terminal orqali)
+## 1. Firebase loyihasini ochish
 
-1. Python 3.10 yoki yangisini o'rnating: https://www.python.org/downloads/ (o'rnatishda "Add Python to PATH" belgisini qo'ying).
-2. Papka ichida terminal (cmd) oching va kutubxonalarni o'rnating:
-   ```
-   pip install -r requirements.txt
-   ```
-3. O'zingizni admin qilib, serverni ishga tushiring.
+1. https://console.firebase.google.com ga Google akkauntingiz bilan kiring.
+2. **Create a project** → nomi: `kompsavod` → Google Analytics shart emas → **Create**.
+3. Bosh sahifadagi **</>** (Web) belgisini bosing → nomi: `kompsavod-web` → **Register app**.
+4. Chiqqan `firebaseConfig = { ... }` qismini nusxa olib, menga yuboring (yoki `assets/firebase-config.js` faylga qo‘ying). Bu kalitlar maxfiy emas.
 
-   **Windows (cmd):**
-   ```
-   set ADMIN_PHONE=+998901234567
-   python server.py
-   ```
-   **Mac / Linux:**
-   ```
-   ADMIN_PHONE=+998901234567 python3 server.py
-   ```
-   `+998901234567` o'rniga o'z raqamingizni yozing.
-4. Brauzerda oching: http://localhost:8000
-5. "Kirish" → o'z raqamingiz → kod **terminal oynasida** chiqadi (sinov rejimi) → ro'yxatdan o'ting. Siz avtomatik admin bo'lasiz.
+## 2. SMS orqali kirishni yoqish
 
-## 2. Haqiqiy SMS (Eskiz.uz)
+1. **Build → Authentication → Get started → Sign-in method → Phone → Enable → Save**.
+2. **Authentication → Settings → Authorized domains** ga qo‘shing: `kompsavod.uz`, `www.kompsavod.uz` va Vercel bergan manzil (masalan `kompsavod.vercel.app`).
+3. **Authentication → Settings → SMS region policy**: O‘zbekistonga ruxsat berilganini tekshiring (faqat O‘zbekistonni “Allow” qilsangiz, boshqa davlatlardan soxta so‘rovlar kamayadi).
+4. **Haqiqiy SMS yuborish uchun loyihani Blaze (to‘lovli) tarifga o‘tkazish kerak**: chap pastdagi **Upgrade** → bank kartani ulang. Har bir SMS uchun oz miqdorda pul yechiladi. Byudjetdan oshib ketmaslik uchun Google Cloud’da **Budget alert** (masalan oyiga 10$) qo‘yib qo‘ying.
+5. Bepul sinash uchun: **Sign-in method → Phone → Phone numbers for testing** ga sinov raqami va kod qo‘shing (masalan `+998 90 000 00 01` → `123456`). Bu raqamga SMS ketmaydi, pul ham olinmaydi.
 
-1. https://eskiz.uz da ro'yxatdan o'ting, shartnoma tuzing va balansni to'ldiring.
-2. SMS matni shablonini Eskiz'da tasdiqlating (masalan: `KompSavod: tasdiqlash kodi {code}. Kodni hech kimga bermang.`). Tasdiqlangan matn serverdagi `SMS_TEXT` bilan aynan bir xil bo'lishi kerak.
-3. Serverni Eskiz ma'lumotlari bilan ishga tushiring:
-   ```
-   set ADMIN_PHONE=+998901234567
-   set ESKIZ_EMAIL=sizning@email.uz
-   set ESKIZ_PASSWORD=eskiz_kaliti
-   python server.py
-   ```
-   Endi kodlar haqiqiy SMS bo'lib boradi.
+## 3. Ma’lumotlar bazasini ochish
 
-## 3. Internetga chiqarish (kompsavod.uz)
+1. **Build → Firestore Database → Create database**.
+2. Joylashuv: `eur3 (europe-west)` yoki yaqinroq Yevropa hududi → **Production mode** → **Create**.
+3. **Rules** bo‘limiga `firestore.rules` faylining to‘liq matnini qo‘ying → **Publish**.
 
-Kompyuteringizda ishlagan sayt faqat sizga ko'rinadi. Hammaga ochiq bo'lishi uchun serverni doim yoniq turadigan **VPS** serverga qo'yish kerak (O'zbekistondagi hosting kompaniyalarining VPS xizmati yoki DigitalOcean, Hetzner va h.k.). Muhim: `data` papkasi saqlanib qoladigan joy bo'lishi shart, aks holda ma'lumotlar yo'qoladi. VPS'ga https (SSL) bilan qo'yilganda `HTTPS=1` va `TRUST_PROXY=1` sozlamalarini qo'shing.
+## 4. O‘zingizni admin qilish
 
-## Ma'lumotlar xavfsizligi
+1. Sayt ishga tushgach, `/kirish` orqali o‘z raqamingiz bilan ro‘yxatdan o‘ting.
+2. Firebase → **Firestore Database → Data → users** → o‘zingizning yozuvingizni oching.
+3. `role` maydonini `student` dan **`admin`** ga o‘zgartiring → **Update**.
+4. Saytga qayta kiring: endi `/admin` paneli ochiladi.
 
-- Saytda o'quvchi yoki kursni o'chirish funksiyasi umuman yo'q: faqat bloklash yoki yashirish mumkin.
-- Har bir kirish (vaqt, IP manzil, qurilma) `logins` jadvalida, adminning har bir amali `audit_log` jadvalida saqlanadi.
-- `data` papkasini vaqti-vaqti bilan boshqa joyga (fleshka, Google Drive) nusxalab qo'ying.
-- `data/.secret_key` faylini hech kimga bermang va o'chirmang.
+## 5. Kurs va dars qo‘shish
+
+1. Videoni YouTube’ga yuklang, ko‘rinishini **Unlisted** (havola orqali) qiling.
+2. Admin panel → **Kurslar va darslar** → **Yangi kurs qo‘shish** → nomi, tavsifi, narxi → “Saytda ko‘rsatilsin” belgisi → **Kursni qo‘shish**.
+3. Pastdagi **Yangi dars qo‘shish** formasiga dars nomi va YouTube havolasini qo‘ying.
+4. Kurs darhol bosh sahifada paydo bo‘ladi.
+
+## 6. O‘quvchiga ruxsat berish
+
+1. O‘quvchi ro‘yxatdan o‘tadi → admin panelda “Kutilmoqda” holatida chiqadi.
+2. To‘lovni tekshirgach, **Ruxsat berish** → kurslarni belgilang → izoh (masalan, “Click orqali to‘ladi”) → **Ruxsat berish**.
+3. O‘quvchi kabinetida darslar ochiladi.
+
+## Eslatma
+
+YouTube “Unlisted” videolar havolasi bor odamga ochiq bo‘ladi. Ruxsat berilgan o‘quvchi havolani boshqalarga tarqatishi mumkin. Kuchliroq himoya kerak bo‘lsa, keyinchalik Vimeo (domen bo‘yicha cheklash bilan) ishlatish mumkin.

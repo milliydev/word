@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kirish – KompSavod</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="dark-bg">
+<div class="auth-page">
+  <div class="wrap"><nav class="nav"><a class="brand" href="/" id="brand">KompSavod</a></nav></div>
+
+  <main class="auth-center">
+    <div class="auth-card">
+
+      <!-- 1-qadam: telefon -->
+      <form id="stepPhone" novalidate>
+        <h1>Kirish yoki ro‘yxatdan o‘tish</h1>
+        <p class="lead">Telefon raqamingizni kiriting, unga SMS orqali tasdiqlash kodi keladi.</p>
+        <div class="form-error hidden" id="phoneError" role="alert"></div>
+        <div class="field">
+          <label for="phone">Telefon raqam</label>
+          <div class="phone-row">
+            <span class="prefix">+998</span>
+            <input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="90 123 45 67" maxlength="12" required>
+          </div>
+          <span class="hint">Faqat o‘zingizga tegishli, SMS qabul qiladigan raqam.</span>
+        </div>
+        <button class="btn btn-indigo" style="width:100%" id="sendBtn" type="submit">SMS kod yuborish</button>
+        <div id="recaptcha"></div>
+      </form>
+
+      <!-- 2-qadam: kod -->
+      <form id="stepCode" class="hidden" novalidate>
+        <h1>Kodni kiriting</h1>
+        <p class="lead">Kod <b id="phoneShown"></b> raqamiga yuborildi.</p>
+        <div class="form-error hidden" id="codeError" role="alert"></div>
+        <div class="field">
+          <label for="code">6 xonali kod</label>
+          <input id="code" class="input code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+        </div>
+        <button class="btn btn-indigo" style="width:100%" id="verifyBtn" type="submit">Tasdiqlash</button>
+        <p style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:16px 0 0">
+          <button type="button" class="link-btn" id="changePhone">Raqamni o‘zgartirish</button>
+          <button type="button" class="link-btn" id="resendBtn" disabled>Qayta yuborish</button>
+        </p>
+      </form>
+
+      <!-- 3-qadam: yangi foydalanuvchi ma'lumotlari -->
+      <form id="stepProfile" class="hidden" novalidate>
+        <h1>Ro‘yxatdan o‘tish</h1>
+        <p class="lead">Raqamingiz tasdiqlandi. Ozgina ma’lumot qoldi.</p>
+        <div class="form-error hidden" id="profileError" role="alert"></div>
+        <div class="field">
+          <label for="profilePhone">Telefon raqam (bog‘lanish uchun)</label>
+          <div class="phone-row">
+            <span class="prefix">+998</span>
+            <input id="profilePhone" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="90 123 45 67" maxlength="12">
+          </div>
+          <span class="hint">Siz bilan bog‘lanish uchun. Standart — tasdiqlangan raqamingiz, xohlasangiz boshqasini yozing.</span>
+        </div>
+        <div class="field">
+          <label for="name">Ism va familiya</label>
+          <input id="name" class="input" type="text" autocomplete="name" maxlength="80" required>
+        </div>
+        <div class="field">
+          <label for="region">Hudud</label>
+          <select id="region" class="input" required></select>
+        </div>
+        <button class="btn btn-indigo" style="width:100%" id="saveBtn" type="submit">Ro‘yxatdan o‘tish</button>
+      </form>
+
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import { auth, db, isConfigured, showConfigWarning, loadProfile, toast, REGIONS, LOGO_SVG, fmtPhone } from "/assets/app.js";
+import { RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { doc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
+const $ = (id) => document.getElementById(id);
+const steps = { phone: $("stepPhone"), code: $("stepCode"), profile: $("stepProfile") };
+function show(step) { Object.entries(steps).forEach(([k, el]) => el.classList.toggle("hidden", k !== step)); }
+function setError(id, msg) { const el = $(id); el.textContent = msg || ""; el.classList.toggle("hidden", !msg); }
+$("region").innerHTML = `<option value="">Tanlang</option>` + REGIONS.map(r => `<option>${r}</option>`).join("");
+
+if (showConfigWarning()) {
+  $("sendBtn").disabled = true;
+} else {
+  let confirmation = null;
+  let verifier = null;
+  let fullPhone = "";
+  let busy = false;
+  let resendTimer = null;
+
+  // Telefon maydonini formatlash: 90 123 45 67
+  const fmtNational = (v) => {
+    const d = String(v).replace(/\D/g, "").slice(-9).slice(0, 9);
+    return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 7), d.slice(7, 9)].filter(Boolean).join(" ");
+  };
+  $("phone").addEventListener("input", (e) => { e.target.value = fmtNational(e.target.value); });
+  $("profilePhone").addEventListener("input", (e) => { e.target.value = fmtNational(e.target.value); });
+  $("code").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6); });
+
+  function getVerifier() {
+    if (!verifier) verifier = new RecaptchaVerifier(auth, "recaptcha", { size: "invisible" });
+    return verifier;
+  }
+  function resetVerifier() {
+    try { verifier?.clear(); } catch {}
+    verifier = null;
+    $("recaptcha").innerHTML = "";
+  }
+
+  const AUTH_ERRORS = {
+    "auth/invalid-phone-number": "Telefon raqam noto‘g‘ri. Tekshirib qayta kiriting.",
+    "auth/too-many-requests": "Juda ko‘p urinish bo‘ldi. Birozdan keyin qayta urinib ko‘ring.",
+    "auth/quota-exceeded": "Bugungi SMS limiti tugadi. Keyinroq urinib ko‘ring.",
+    "auth/invalid-verification-code": "Kod noto‘g‘ri. SMS’dagi 6 xonali kodni kiriting.",
+    "auth/code-expired": "Kodning muddati tugadi. Yangi kod so‘rang.",
+    "auth/captcha-check-failed": "Xavfsizlik tekshiruvi o‘tmadi. Sahifani yangilab qayta urinib ko‘ring.",
+    "auth/network-request-failed": "Internet aloqasi yo‘q. Ulanishni tekshiring.",
+    "auth/operation-not-allowed": "SMS orqali kirish hali yoqilmagan (Firebase sozlamasi).",
+    "auth/unauthorized-domain": "Bu domen Firebase’da ruxsat etilganlar ro‘yxatida yo‘q."
+  };
+  const errText = (e) => AUTH_ERRORS[e?.code] || "Xatolik yuz berdi. Qayta urinib ko‘ring.";
+
+  async function sendCode() {
+    const digits = $("phone").value.replace(/\D/g, "");
+    if (digits.length !== 9) { setError("phoneError", "Raqamni to‘liq kiriting: 9 ta raqam, masalan 90 123 45 67."); return; }
+    setError("phoneError", "");
+    fullPhone = "+998" + digits;
+    $("sendBtn").disabled = true; $("sendBtn").textContent = "Yuborilmoqda…";
+    try {
+      confirmation = await signInWithPhoneNumber(auth, fullPhone, getVerifier());
+      $("phoneShown").textContent = fmtPhone(fullPhone);
+      $("code").value = "";
+      setError("codeError", "");
+      show("code");
+      $("code").focus();
+      startResendTimer();
+    } catch (e) {
+      console.error(e);
+      resetVerifier();
+      setError("phoneError", errText(e));
+    } finally {
+      $("sendBtn").disabled = false; $("sendBtn").textContent = "SMS kod yuborish";
+    }
+  }
+
+  function startResendTimer() {
+    let left = 60;
+    const btn = $("resendBtn");
+    btn.disabled = true;
+    clearInterval(resendTimer);
+    btn.textContent = `Qayta yuborish (${left})`;
+    resendTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { clearInterval(resendTimer); btn.disabled = false; btn.textContent = "Qayta yuborish"; }
+      else btn.textContent = `Qayta yuborish (${left})`;
+    }, 1000);
+  }
+
+  async function afterSignIn(user) {
+    const profile = await loadProfile(user.uid);
+    if (!profile) { $("profilePhone").value = fmtNational(user.phoneNumber || ""); show("profile"); $("name").focus(); return; }
+    try { await updateDoc(doc(db, "users", user.uid), { lastLoginAt: serverTimestamp() }); } catch (e) { console.warn(e); }
+    location.href = profile.role === "admin" ? "/admin" : "/kabinet";
+  }
+
+  $("stepPhone").addEventListener("submit", (e) => { e.preventDefault(); sendCode(); });
+
+  $("stepCode").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = $("code").value.trim();
+    if (code.length !== 6) { setError("codeError", "Kod 6 ta raqamdan iborat."); return; }
+    $("verifyBtn").disabled = true;
+    busy = true;
+    try {
+      const cred = await confirmation.confirm(code);
+      await afterSignIn(cred.user);
+    } catch (err) {
+      console.error(err);
+      setError("codeError", errText(err));
+    } finally {
+      busy = false;
+      $("verifyBtn").disabled = false;
+    }
+  });
+
+  $("changePhone").addEventListener("click", () => { clearInterval(resendTimer); resetVerifier(); show("phone"); $("phone").focus(); });
+  $("resendBtn").addEventListener("click", () => { resetVerifier(); sendCode(); });
+
+  $("stepProfile").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $("name").value.trim().replace(/\s+/g, " ");
+    const region = $("region").value;
+    if (name.length < 2) { setError("profileError", "Ism va familiyangizni yozing."); return; }
+    if (!region) { setError("profileError", "Hududingizni tanlang."); return; }
+    setError("profileError", "");
+    const user = auth.currentUser;
+    if (!user) { show("phone"); return; }
+    const cDigits = $("profilePhone").value.replace(/\D/g, "");
+    const contactPhone = cDigits.length === 9 ? "+998" + cDigits : (user.phoneNumber || "");
+    $("saveBtn").disabled = true;
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        name, region,
+        phone: user.phoneNumber,
+        contactPhone,
+        status: "pending",
+        role: "student",
+        courses: [],
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp()
+      });
+      toast("Ro‘yxatdan o‘tdingiz!", "success");
+      location.href = "/kabinet";
+    } catch (err) {
+      console.error(err);
+      setError("profileError", "Saqlab bo‘lmadi. Internetni tekshirib qayta urinib ko‘ring.");
+      $("saveBtn").disabled = false;
+    }
+  });
+
+  // Oldin kirgan bo'lsa
+  onAuthStateChanged(auth, async (u) => {
+    if (u && !busy && !confirmation) {
+      try { await afterSignIn(u); } catch (e) { console.error(e); }
+    }
+  });
+}
+</script>
+</body>
+</html>

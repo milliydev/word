@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin panel – KompSavod</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/" id="brand">KompSavod</a>
+      <div class="nav-links">
+        <span class="user-chip" id="userChip">Admin</span>
+        <button class="btn btn-ghost btn-sm" id="logoutBtn" type="button">Chiqish</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap page" id="app">
+  <div class="loading">Yuklanmoqda…</div>
+</main>
+
+<!-- Ruxsat berish oynasi -->
+<dialog id="accessDialog" aria-labelledby="accessTitle">
+  <form method="dialog" class="dialog-body" id="accessForm">
+    <h2 id="accessTitle">Ruxsat berish</h2>
+    <p class="lead" id="accessWho" style="margin-bottom:12px"></p>
+    <fieldset style="border:0;padding:0;margin:0">
+      <legend style="font-weight:800;margin-bottom:6px">Qaysi kurslarga ruxsat beriladi</legend>
+      <div id="accessCourses"></div>
+    </fieldset>
+    <div class="field" style="margin-top:12px">
+      <label for="accessNote">Izoh (faqat admin ko‘radi)</label>
+      <input id="accessNote" class="input" type="text" maxlength="200" placeholder="Masalan: Click orqali to‘ladi, 12.11">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-light" value="cancel" type="submit" formnovalidate>Bekor qilish</button>
+      <button class="btn btn-indigo" value="save" type="submit" id="accessSave">Ruxsat berish</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { auth, db, storage, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, toast, STATUS_LABELS, LOGO_SVG } from "/assets/app.js";
+import {
+  collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
+document.getElementById("logoutBtn").addEventListener("click", logout);
+const app = document.getElementById("app");
+const $ = (s, root = document) => root.querySelector(s);
+
+let users = [];
+let courses = [];
+let reviews = [];
+let tab = "users";
+let filter = { q: "", status: "all" };
+let editingCourseId = null;
+let lessons = [];
+let lessonsUnsub = null;
+let editingLessonId = null;
+let formDirty = false; // admin forma to'ldirayotganda yangi ma'lumot kelsa, yozganlari o'chib ketmasligi uchun
+
+if (!showConfigWarning()) {
+  const user = await currentUser();
+  if (!user) location.replace("/kirish");
+  else {
+    const me = await loadProfile(user.uid);
+    if (!me || me.role !== "admin") {
+      app.innerHTML = `<div class="status-card rejected"><h2>Bu sahifa faqat admin uchun</h2><p><a href="/kabinet">Kabinetingizga qaytish</a></p></div>`;
+    } else {
+      $("#userChip").textContent = me.name + " (admin)";
+      start();
+    }
+  }
+}
+
+function start() {
+  onSnapshot(query(collection(db, "users"), orderBy("createdAt", "desc")),
+    (snap) => { users = snap.docs.map(d => ({ id: d.id, ...d.data() })); if (tab === "users") render(); },
+    (err) => { console.error(err); toast("O‘quvchilarni yuklab bo‘lmadi", "error"); });
+  onSnapshot(query(collection(db, "courses"), orderBy("order")),
+    (snap) => { courses = snap.docs.map(d => ({ id: d.id, ...d.data() })); if (tab === "users" || !formDirty) render(); },
+    (err) => { console.error(err); toast("Kurslarni yuklab bo‘lmadi", "error"); });
+  onSnapshot(query(collection(db, "reviews"), orderBy("createdAt", "desc")),
+    (snap) => { reviews = snap.docs.map(d => ({ id: d.id, ...d.data() })); if (tab === "reviews") render(); },
+    (err) => { console.error(err); toast("Sharhlarni yuklab bo‘lmadi", "error"); });
+}
+
+function render() {
+  const keepFocus = document.activeElement?.id;
+  const caret = document.activeElement?.selectionStart;
+  app.innerHTML = `
+    <h1>Admin panel</h1>
+    <p class="lead">O‘quvchilar, ruxsatlar va kurslarni boshqarish.</p>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="users" aria-selected="${tab === "users"}">O‘quvchilar</button>
+      <button class="tab" role="tab" data-tab="courses" aria-selected="${tab === "courses"}">Kurslar va darslar</button>
+      <button class="tab" role="tab" data-tab="reviews" aria-selected="${tab === "reviews"}">Sharhlar</button>
+    </div>
+    <div id="tabBody"></div>`;
+  app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; formDirty = false; render(); }));
+  if (tab === "users") renderUsers(); else if (tab === "courses") renderCourses(); else renderReviews();
+  if (keepFocus) { const el = document.getElementById(keepFocus); if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch {} } }
+}
+
+/* ================= O'QUVCHILAR ================= */
+function renderUsers() {
+  const students = users.filter(u => u.role !== "admin");
+  const count = (s) => students.filter(u => u.status === s).length;
+  const q = filter.q.toLowerCase().replace(/\s/g, "");
+  const list = students.filter(u =>
+    (filter.status === "all" || u.status === filter.status) &&
+    (!q || (u.name || "").toLowerCase().replace(/\s/g, "").includes(q) || (u.phone || "").includes(q)));
+  const courseName = (id) => courses.find(c => c.id === id)?.title || "o‘chirilgan kurs";
+
+  $("#tabBody").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="n">${students.length}</div><div class="l">Jami o‘quvchilar</div></div>
+      <div class="stat"><div class="n">${count("pending")}</div><div class="l">Ruxsat kutmoqda</div></div>
+      <div class="stat"><div class="n">${count("approved")}</div><div class="l">Ruxsat berilgan</div></div>
+      <div class="stat"><div class="n">${count("rejected") + count("blocked")}</div><div class="l">Rad etilgan / bloklangan</div></div>
+    </div>
+    <div class="toolbar">
+      <label class="sr-only" for="search">Qidirish</label>
+      <input id="search" class="input grow" type="search" placeholder="Ism yoki telefon bo‘yicha qidirish" value="${esc(filter.q)}">
+      <label class="sr-only" for="statusFilter">Holat</label>
+      <select id="statusFilter" class="input" style="width:auto">
+        <option value="all">Barchasi</option>
+        ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${filter.status === k ? "selected" : ""}>${v}</option>`).join("")}
+      </select>
+      <button class="btn btn-light" id="exportBtn" type="button">Excel’ga yuklab olish</button>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Ism</th><th>Telefon</th><th>Hudud</th><th>Ro‘yxatdan o‘tgan</th><th>Oxirgi kirish</th><th>Holat</th><th>Kurslar</th><th>Amallar</th></tr></thead>
+        <tbody>
+          ${list.length ? list.map(u => `
+            <tr>
+              <td><b>${esc(u.name)}</b>${u.adminNote ? `<br><small style="color:var(--muted)">${esc(u.adminNote)}</small>` : ""}</td>
+              <td><a href="tel:${esc(u.contactPhone || u.phone)}">${esc(fmtPhone(u.contactPhone || u.phone))}</a>${u.contactPhone && u.contactPhone !== u.phone ? `<br><small style="color:var(--muted)">login: ${esc(fmtPhone(u.phone))}</small>` : ""}</td>
+              <td>${esc(u.region)}</td>
+              <td>${esc(fmtDate(u.createdAt))}</td>
+              <td>${esc(fmtDate(u.lastLoginAt))}</td>
+              <td><span class="badge ${esc(u.status)}">${esc(STATUS_LABELS[u.status] || u.status)}</span></td>
+              <td style="white-space:normal;min-width:160px">${(u.courses || []).map(id => esc(courseName(id))).join(", ") || "—"}</td>
+              <td><div class="row-actions">
+                <button class="btn btn-indigo btn-sm" data-act="access" data-id="${esc(u.id)}">${u.status === "approved" ? "Kurslarni o‘zgartirish" : "Ruxsat berish"}</button>
+                ${u.status === "pending" ? `<button class="btn btn-danger btn-sm" data-act="reject" data-id="${esc(u.id)}">Rad etish</button>` : ""}
+                ${u.status === "approved" ? `<button class="btn btn-danger btn-sm" data-act="block" data-id="${esc(u.id)}">Bloklash</button>` : ""}
+                ${u.status === "rejected" || u.status === "blocked" ? `<button class="btn btn-light btn-sm" data-act="pending" data-id="${esc(u.id)}">Kutishga qaytarish</button>` : ""}
+              </div></td>
+            </tr>`).join("")
+          : `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">${students.length ? "Qidiruv bo‘yicha hech kim topilmadi." : "Hali hech kim ro‘yxatdan o‘tmagan. Saytni reklama qiling!"}</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+
+  $("#search").addEventListener("input", (e) => { filter.q = e.target.value; renderUsers(); const s = $("#search"); s.focus(); s.setSelectionRange(s.value.length, s.value.length); });
+  $("#statusFilter").addEventListener("change", (e) => { filter.status = e.target.value; renderUsers(); });
+  $("#exportBtn").addEventListener("click", () => exportCsv(students, courseName));
+  app.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => userAction(b.dataset.act, b.dataset.id)));
+}
+
+async function userAction(act, id) {
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  if (act === "access") return openAccess(u);
+  const labels = { reject: "rad etilsinmi", block: "bloklansinmi", pending: "kutish holatiga qaytarilsinmi" };
+  if (!confirm(`${u.name} ${labels[act]}?`)) return;
+  const status = act === "reject" ? "rejected" : act === "block" ? "blocked" : "pending";
+  try {
+    await updateDoc(doc(db, "users", id), { status, statusChangedAt: serverTimestamp(), statusChangedBy: auth.currentUser.uid });
+    toast("Saqlandi", "success");
+  } catch (e) { console.error(e); toast("Saqlab bo‘lmadi", "error"); }
+}
+
+function openAccess(u) {
+  const dlg = $("#accessDialog");
+  $("#accessWho").textContent = `${u.name} · ${fmtPhone(u.phone)}`;
+  $("#accessNote").value = u.adminNote || "";
+  const owned = new Set(u.courses || []);
+  $("#accessCourses").innerHTML = courses.length
+    ? courses.map(c => `<label class="check"><input type="checkbox" value="${esc(c.id)}" ${owned.has(c.id) ? "checked" : ""}> ${esc(c.title)} ${c.published ? "" : `<span class="badge draft">yashirin</span>`}</label>`).join("")
+    : `<p style="color:var(--muted)">Avval “Kurslar va darslar” bo‘limida kurs qo‘shing.</p>`;
+  $("#accessSave").textContent = u.status === "approved" ? "Saqlash" : "Ruxsat berish";
+  dlg.returnValue = "";
+  dlg.showModal();
+  dlg.onclose = async () => {
+    if (dlg.returnValue !== "save") return;
+    const selected = [...dlg.querySelectorAll("#accessCourses input:checked")].map(i => i.value);
+    if (!selected.length) { toast("Kamida bitta kursni belgilang", "error"); return; }
+    try {
+      await updateDoc(doc(db, "users", u.id), {
+        status: "approved",
+        courses: selected,
+        adminNote: $("#accessNote").value.trim().slice(0, 200),
+        statusChangedAt: serverTimestamp(),
+        statusChangedBy: auth.currentUser.uid
+      });
+      toast("Ruxsat berildi", "success");
+    } catch (e) { console.error(e); toast("Saqlab bo‘lmadi", "error"); }
+  };
+}
+
+function exportCsv(list, courseName) {
+  const cell = (v) => {
+    let s = String(v ?? "");
+    if (/^[=+\-@]/.test(s)) s = "'" + s; // Excel formulasi sifatida ishga tushmasligi uchun
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const rows = [["Ism", "Telefon", "Hudud", "Ro‘yxatdan o‘tgan", "Oxirgi kirish", "Holat", "Kurslar", "Izoh"]]
+    .concat(list.map(u => [u.name, fmtPhone(u.phone), u.region, fmtDate(u.createdAt), fmtDate(u.lastLoginAt),
+      STATUS_LABELS[u.status] || u.status, (u.courses || []).map(courseName).join("; "), u.adminNote || ""]));
+  const csv = "\uFEFF" + rows.map(r => r.map(cell).join(";")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `kompsavod-oquvchilar-${new Date().toISOString().slice(0, 10)}.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ================= KURSLAR ================= */
+function renderCourses() {
+  const c = courses.find(x => x.id === editingCourseId);
+  $("#tabBody").innerHTML = `
+    <div class="player-layout">
+      <div class="player-side">
+        <div class="panel">
+          <h2>Kurslar</h2>
+          ${courses.length ? `<ol class="lesson-list">${courses.map(x => `
+            <li><button data-course="${esc(x.id)}" aria-current="${x.id === editingCourseId}">
+              <span class="no">${esc(x.order ?? "")}</span>
+              <span>${esc(x.title)}<br><small style="color:var(--muted)">${esc(x.lessonCount || 0)} dars · ${x.published ? "saytda" : "yashirin"}</small></span>
+            </button></li>`).join("")}</ol>` : `<p style="color:var(--muted);margin:0 0 12px">Hali kurs yo‘q. Birinchi kursni qo‘shing.</p>`}
+          <button class="btn btn-mint" style="width:100%;margin-top:12px" id="newCourse">Yangi kurs qo‘shish</button>
+        </div>
+      </div>
+      <div class="player-main">
+        <form class="panel" id="courseForm" novalidate>
+          <h2>${c ? "Kursni tahrirlash" : "Yangi kurs"}</h2>
+          <div class="field"><label for="cTitle">Kurs nomi</label><input id="cTitle" class="input" maxlength="120" required value="${esc(c?.title || "")}"></div>
+          <div class="field"><label for="cDesc">Qisqacha tavsif</label><textarea id="cDesc" class="input" maxlength="600">${esc(c?.description || "")}</textarea></div>
+          <div class="form-row">
+            <div class="field"><label for="cPrice">Narxi</label><input id="cPrice" class="input" maxlength="60" placeholder="Masalan: 299 000 so‘m" value="${esc(c?.price || "")}"></div>
+            <div class="field"><label for="cOrder">Tartib raqami</label><input id="cOrder" class="input" type="number" min="0" max="999" value="${esc(c?.order ?? courses.length + 1)}"><span class="hint">Saytda shu tartibda chiqadi</span></div>
+          </div>
+          <label class="check"><input type="checkbox" id="cPublished" ${c?.published ? "checked" : ""}> Saytda ko‘rsatilsin</label>
+          <div class="dialog-actions" style="justify-content:flex-start">
+            <button class="btn btn-indigo" type="submit" id="cSave">${c ? "Saqlash" : "Kursni qo‘shish"}</button>
+          </div>
+        </form>
+        ${c ? lessonsPanel(c) : ""}
+      </div>
+    </div>`;
+
+  app.querySelectorAll("[data-course]").forEach(b => b.addEventListener("click", () => selectCourse(b.dataset.course)));
+  $("#newCourse").addEventListener("click", () => selectCourse(null));
+  $("#courseForm").addEventListener("submit", saveCourse);
+  app.querySelectorAll("#courseForm, #lessonForm").forEach(f => f.addEventListener("input", () => { formDirty = true; }));
+  if (c) bindLessons(c);
+}
+
+function selectCourse(id) {
+  formDirty = false;
+  editingCourseId = id;
+  editingLessonId = null;
+  lessons = [];
+  lessonsUnsub?.(); lessonsUnsub = null;
+  if (id) {
+    lessonsUnsub = onSnapshot(query(collection(db, "courses", id, "lessons"), orderBy("order")),
+      (snap) => { lessons = snap.docs.map(d => ({ id: d.id, ...d.data() })); if (tab === "courses" && !formDirty) renderCourses(); },
+      (err) => { console.error(err); toast("Darslarni yuklab bo‘lmadi", "error"); });
+  }
+  renderCourses();
+}
+
+async function saveCourse(e) {
+  e.preventDefault();
+  const title = $("#cTitle").value.trim();
+  if (title.length < 2) { toast("Kurs nomini yozing", "error"); $("#cTitle").focus(); return; }
+  const data = {
+    title,
+    description: $("#cDesc").value.trim(),
+    price: $("#cPrice").value.trim(),
+    order: Math.max(0, parseInt($("#cOrder").value, 10) || 0),
+    published: $("#cPublished").checked,
+    updatedAt: serverTimestamp()
+  };
+  $("#cSave").disabled = true;
+  try {
+    if (editingCourseId) {
+      await updateDoc(doc(db, "courses", editingCourseId), data);
+      formDirty = false;
+      renderCourses();
+      toast("Kurs saqlandi", "success");
+      return;
+    } else {
+      const ref = await addDoc(collection(db, "courses"), { ...data, lessonCount: 0, createdAt: serverTimestamp() });
+      toast("Kurs qo‘shildi. Endi darslarni qo‘shing.", "success");
+      selectCourse(ref.id);
+      return;
+    }
+  } catch (err) { console.error(err); toast("Saqlab bo‘lmadi", "error"); }
+  $("#cSave").disabled = false;
+}
+
+function lessonsPanel(c) {
+  const l = lessons.find(x => x.id === editingLessonId);
+  return `
+    <div class="panel">
+      <h2>Darslar: ${esc(c.title)}</h2>
+      ${lessons.length ? `<div class="table-box" style="margin-bottom:20px"><table>
+        <thead><tr><th>#</th><th>Dars nomi</th><th>Video</th><th>Holat</th><th>Amallar</th></tr></thead>
+        <tbody>${lessons.map(x => `<tr>
+          <td>${esc(x.order)}</td>
+          <td style="white-space:normal"><b>${esc(x.title)}</b>${x.duration ? `<br><small style="color:var(--muted)">${esc(x.duration)}</small>` : ""}</td>
+          <td>${x.videoFile ? `<span class="badge approved">Fayl</span>` : videoEmbed(x.videoUrl) ? `<span class="badge approved">Havola</span>` : x.videoUrl ? `<span class="badge rejected">Havola noto‘g‘ri</span>` : `<span class="badge draft">yo‘q</span>`}</td>
+          <td>${x.hidden ? `<span class="badge draft">yashirin</span>` : `<span class="badge approved">ko‘rinadi</span>`}</td>
+          <td><div class="row-actions">
+            <button class="btn btn-light btn-sm" data-ledit="${esc(x.id)}">Tahrirlash</button>
+            <button class="btn btn-light btn-sm" data-lhide="${esc(x.id)}">${x.hidden ? "Ko‘rsatish" : "Yashirish"}</button>
+          </div></td></tr>`).join("")}</tbody></table></div>`
+      : `<p style="color:var(--muted)">Bu kursda hali dars yo‘q.</p>`}
+      <form id="lessonForm" novalidate>
+        <h2 style="font-size:18px">${l ? "Darsni tahrirlash" : "Yangi dars qo‘shish"}</h2>
+        <div class="form-row">
+          <div class="field"><label for="lTitle">Dars nomi</label><input id="lTitle" class="input" maxlength="160" required value="${esc(l?.title || "")}"></div>
+          <div class="field"><label for="lOrder">Tartib raqami</label><input id="lOrder" class="input" type="number" min="1" max="999" value="${esc(l?.order ?? lessons.length + 1)}"></div>
+        </div>
+        <div class="field"><label for="lUrl">Video havola (YouTube yoki Vimeo)</label><input id="lUrl" class="input" type="url" placeholder="https://youtu.be/..." value="${esc(l?.videoUrl || "")}"><span class="hint">YouTube’da videoni “Unlisted” (havola orqali) qilib yuklang.</span></div>
+        <div class="field">
+          <label for="lFile">— yoki video faylni yuklang —</label>
+          <input id="lFile" class="input" type="file" accept="video/*">
+          <span class="hint">Fayl to‘g‘ridan-to‘g‘ri saytga yuklanadi. Tavsiya: MP4, 500 MB gacha. Katta fayl sekin yuklanadi — sahifani yopmang.</span>
+          <div id="lProgress" class="upload-progress" hidden><div class="bar"><div class="bar-fill" id="lBarFill"></div></div><span id="lBarText">0%</span></div>
+          ${l?.videoFile ? `<p class="hint" style="color:#1FA383;font-weight:600">✓ Bu darsda yuklangan video bor. Yangi fayl tanlasangiz, u almashtiriladi.</p>` : ""}
+        </div>
+        <div class="form-row">
+          <div class="field"><label for="lDur">Davomiyligi</label><input id="lDur" class="input" maxlength="20" placeholder="12 daqiqa" value="${esc(l?.duration || "")}"></div>
+        </div>
+        <div class="field"><label for="lDesc">Dars tavsifi yoki topshiriq</label><textarea id="lDesc" class="input" maxlength="2000">${esc(l?.description || "")}</textarea></div>
+        <div class="dialog-actions" style="justify-content:flex-start">
+          <button class="btn btn-indigo" type="submit" id="lSave">${l ? "Saqlash" : "Darsni qo‘shish"}</button>
+          ${l ? `<button class="btn btn-light" type="button" id="lCancel">Bekor qilish</button>` : ""}
+        </div>
+      </form>
+    </div>`;
+}
+
+function bindLessons(c) {
+  app.querySelectorAll("[data-ledit]").forEach(b => b.addEventListener("click", () => { editingLessonId = b.dataset.ledit; formDirty = false; renderCourses(); $("#lTitle").focus(); }));
+  app.querySelectorAll("[data-lhide]").forEach(b => b.addEventListener("click", async () => {
+    const x = lessons.find(l => l.id === b.dataset.lhide);
+    try {
+      await updateDoc(doc(db, "courses", c.id, "lessons", x.id), { hidden: !x.hidden, updatedAt: serverTimestamp() });
+      await syncLessonCount(c.id);
+    } catch (e) { console.error(e); toast("Saqlab bo‘lmadi", "error"); }
+  }));
+  $("#lCancel")?.addEventListener("click", () => { editingLessonId = null; formDirty = false; renderCourses(); });
+  $("#lessonForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = $("#lTitle").value.trim();
+    const videoUrl = $("#lUrl").value.trim();
+    const file = $("#lFile").files[0] || null;
+    const existing = lessons.find(x => x.id === editingLessonId);
+    if (title.length < 2) { toast("Dars nomini yozing", "error"); return; }
+    if (videoUrl && !videoEmbed(videoUrl)) { toast("Faqat YouTube yoki Vimeo havolasi qabul qilinadi", "error"); return; }
+    if (file && !file.type.startsWith("video/")) { toast("Faqat video fayl yuklash mumkin", "error"); return; }
+    if (!videoUrl && !file && !existing?.videoFile) { toast("Video havolasini kiriting yoki fayl yuklang", "error"); return; }
+
+    const data = {
+      title, videoUrl,
+      order: Math.max(1, parseInt($("#lOrder").value, 10) || 1),
+      duration: $("#lDur").value.trim(),
+      description: $("#lDesc").value.trim(),
+      updatedAt: serverTimestamp()
+    };
+    $("#lSave").disabled = true;
+    try {
+      // 1) Dars hujjatini saqlaymiz (fayl uchun ID kerak)
+      let lessonId = editingLessonId;
+      if (lessonId) await updateDoc(doc(db, "courses", c.id, "lessons", lessonId), data);
+      else {
+        const ref = await addDoc(collection(db, "courses", c.id, "lessons"), { ...data, hidden: false, createdAt: serverTimestamp() });
+        lessonId = ref.id;
+      }
+      // 2) Fayl tanlangan bo'lsa — Storage'ga yuklaymiz
+      if (file) {
+        const path = `lessons/${c.id}/${lessonId}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, "_")}`;
+        const task = uploadBytesResumable(storageRef(storage, path), file, { contentType: file.type });
+        const prog = $("#lProgress"), fill = $("#lBarFill"), ptext = $("#lBarText");
+        if (prog) prog.hidden = false;
+        await new Promise((resolve, reject) => {
+          task.on("state_changed",
+            (s) => { const pct = Math.round((s.bytesTransferred / s.totalBytes) * 100); if (fill) fill.style.width = pct + "%"; if (ptext) ptext.textContent = pct + "%"; },
+            reject, resolve);
+        });
+        const url = await getDownloadURL(task.snapshot.ref);
+        await updateDoc(doc(db, "courses", c.id, "lessons", lessonId), { videoFile: url, videoPath: path, updatedAt: serverTimestamp() });
+      }
+      editingLessonId = null;
+      formDirty = false;
+      await syncLessonCount(c.id);
+      renderCourses();
+      toast("Dars saqlandi", "success");
+    } catch (err) { console.error(err); toast("Saqlab bo‘lmadi: " + (err?.code || err?.message || ""), "error"); $("#lSave").disabled = false; }
+  });
+}
+
+async function syncLessonCount(courseId) {
+  const snap = await getDocs(collection(db, "courses", courseId, "lessons"));
+  const n = snap.docs.filter(d => !d.data().hidden).length;
+  await updateDoc(doc(db, "courses", courseId), { lessonCount: n });
+}
+
+/* ================= SHARHLAR ================= */
+function renderReviews() {
+  const starHtml = (n) => "★★★★★☆☆☆☆☆".slice(5 - (n || 5), 10 - (n || 5));
+  $("#tabBody").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="n">${reviews.length}</div><div class="l">Jami sharhlar</div></div>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Baho</th><th>Sharh (anonim)</th><th>Sana</th><th>Amallar</th></tr></thead>
+        <tbody>
+          ${reviews.length ? reviews.map(r => `
+            <tr>
+              <td style="color:#f5a623;white-space:nowrap">${starHtml(r.rating)}</td>
+              <td style="white-space:normal;min-width:260px">${esc(r.text)}</td>
+              <td>${esc(fmtDate(r.createdAt))}</td>
+              <td><button class="btn btn-danger btn-sm" data-rvdel="${esc(r.id)}">O‘chirish</button></td>
+            </tr>`).join("")
+          : `<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--muted)">Hali sharh yo‘q.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+  app.querySelectorAll("[data-rvdel]").forEach(b => b.addEventListener("click", () => deleteReview(b.dataset.rvdel)));
+}
+
+async function deleteReview(id) {
+  const r = reviews.find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`Bu sharh butunlay o‘chirilsinmi?\n\n“${r.text}”`)) return;
+  try {
+    await deleteDoc(doc(db, "reviews", id));
+    toast("Sharh o‘chirildi", "success");
+  } catch (e) { console.error(e); toast("O‘chirib bo‘lmadi", "error"); }
+}
+</script>
+</body>
+</html>

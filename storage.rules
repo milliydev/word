@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// KompSavod – video fayllar uchun xavfsizlik qoidalari.
+// Firebase Console → Storage → Rules bo'limiga to'liq nusxalab qo'ying va "Publish" bosing.
+//
+//  • Video faylni faqat admin yuklaydi (1 GB gacha, faqat video).
+//  • Video faylni faqat admin va shu kursga ruxsat berilgan o'quvchi ko'radi.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myDoc() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function profile() {
+      return firestore.get(myDoc()).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && firestore.exists(myDoc()) && profile().role == 'admin';
+    }
+
+    // Dars videolari: lessons/{courseId}/{lessonId}/{fayl}
+    match /lessons/{courseId}/{allPaths=**} {
+      allow write: if isAdmin()
+        && request.resource.size < 1024 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+
+      allow read: if signedIn() && firestore.exists(myDoc())
+        && ( profile().role == 'admin'
+             || ( profile().status == 'approved' && courseId in profile().courses ) );
+    }
+
+    // Boshqa hamma narsa yopiq
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kabinet – KompSavod</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/" id="brand">KompSavod</a>
+      <div class="nav-links">
+        <span class="user-chip" id="userChip"></span>
+        <button class="btn btn-ghost btn-sm" id="logoutBtn" type="button">Chiqish</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap page" id="app">
+  <div class="loading">Yuklanmoqda…</div>
+</main>
+
+<script type="module">
+import { db, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, LOGO_SVG } from "/assets/app.js";
+import { doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
+document.getElementById("logoutBtn").addEventListener("click", logout);
+const app = document.getElementById("app");
+
+if (!showConfigWarning()) {
+  const user = await currentUser();
+  if (!user) location.replace("/kirish");
+  else {
+    const me = await loadProfile(user.uid);
+    if (!me) location.replace("/kirish");
+    else if (me.role === "admin") location.replace("/admin");
+    else render(me);
+  }
+}
+
+function infoBlock(me) {
+  return `<p class="lead">${esc(fmtPhone(me.phone))} · ${esc(me.region)} · ro‘yxatdan o‘tgan sana: ${esc(fmtDate(me.createdAt, false))}</p>`;
+}
+
+async function render(me) {
+  document.getElementById("userChip").textContent = me.name;
+  const head = `<h1>Salom, ${esc(me.name.split(" ")[0])}!</h1>${infoBlock(me)}`;
+
+  if (me.status === "pending") {
+    app.innerHTML = head + `
+      <div class="status-card pending">
+        <h2>Arizangiz ko‘rib chiqilmoqda</h2>
+        <p>To‘lovingiz tasdiqlangach, admin sizga ruxsat beradi va darslar shu sahifada ochiladi. Savollar bo‘lsa, Telegram orqali yozing: <a href="https://t.me/kompsavod" target="_blank" rel="noopener">@kompsavod</a>.</p>
+      </div>`;
+    return;
+  }
+  if (me.status === "rejected" || me.status === "blocked") {
+    app.innerHTML = head + `
+      <div class="status-card ${me.status}">
+        <h2>${me.status === "blocked" ? "Akkauntingiz vaqtincha yopilgan" : "Arizangiz tasdiqlanmadi"}</h2>
+        <p>Batafsil ma’lumot uchun biz bilan bog‘laning: <a href="https://t.me/kompsavod" target="_blank" rel="noopener">@kompsavod</a>.</p>
+      </div>`;
+    return;
+  }
+
+  const ids = Array.isArray(me.courses) ? me.courses : [];
+  if (!ids.length) {
+    app.innerHTML = head + `<div class="status-card pending"><h2>Sizga hali kurs ochilmagan</h2><p>Admin kursga ruxsat bergach, u shu yerda paydo bo‘ladi.</p></div>`;
+    return;
+  }
+
+  const courses = [];
+  for (const id of ids) {
+    try {
+      const c = await getDoc(doc(db, "courses", id));
+      if (!c.exists()) continue;
+      const ls = await getDocs(query(collection(db, "courses", id, "lessons"), orderBy("order")));
+      const lessons = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => !l.hidden);
+      courses.push({ id, ...c.data(), lessons });
+    } catch (e) { console.warn("Kursni o‘qib bo‘lmadi:", id, e); }
+  }
+  if (!courses.length) {
+    app.innerHTML = head + `<div class="status-card pending"><h2>Kurslar hozircha mavjud emas</h2><p>Birozdan keyin qayta kiring.</p></div>`;
+    return;
+  }
+
+  let ci = 0, li = 0;
+  function draw() {
+    const c = courses[ci];
+    const l = c.lessons[li];
+    const fileUrl = l?.videoFile || null;
+    const embed = l ? videoEmbed(l.videoUrl) : null;
+    app.innerHTML = head + `
+      <div class="course-pick" role="tablist" aria-label="Kurslaringiz">
+        ${courses.map((x, i) => `<button class="tab" role="tab" aria-selected="${i === ci}" data-c="${i}">${esc(x.title)}</button>`).join("")}
+      </div>
+      <div class="player-layout">
+        <div class="player-main">
+          <div class="video-box">
+            ${fileUrl
+              ? `<video src="${esc(fileUrl)}" title="${esc(l.title)}" controls controlslist="nodownload" playsinline preload="metadata" style="width:100%;height:100%;background:#000"></video>`
+              : embed
+              ? `<iframe src="${esc(embed)}" title="${esc(l.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`
+              : `<div class="video-empty">${c.lessons.length ? "Bu dars uchun video hali qo‘shilmagan." : "Bu kursga hali dars qo‘shilmagan."}</div>`}
+          </div>
+          <div class="panel" style="margin-top:16px">
+            <h2 style="margin-bottom:6px">${l ? `${li + 1}. ${esc(l.title)}` : esc(c.title)}</h2>
+            <p style="margin:0;color:var(--muted);white-space:pre-line">${esc(l?.description || c.description || "")}</p>
+            ${l ? `<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+              <button class="btn btn-light btn-sm" id="prevL" ${li === 0 ? "disabled" : ""}>Oldingi dars</button>
+              <button class="btn btn-indigo btn-sm" id="nextL" ${li >= c.lessons.length - 1 ? "disabled" : ""}>Keyingi dars</button>
+            </div>` : ""}
+          </div>
+        </div>
+        <aside class="player-side panel">
+          <h2>Darslar (${c.lessons.length})</h2>
+          <ol class="lesson-list">
+            ${c.lessons.map((x, i) => `<li><button data-l="${i}" aria-current="${i === li}"><span class="no">${i + 1}</span><span>${esc(x.title)}${x.duration ? `<br><small style="color:var(--muted)">${esc(x.duration)}</small>` : ""}</span></button></li>`).join("")}
+          </ol>
+        </aside>
+      </div>`;
+    app.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => { ci = +b.dataset.c; li = 0; draw(); }));
+    app.querySelectorAll("[data-l]").forEach(b => b.addEventListener("click", () => { li = +b.dataset.l; draw(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+    app.querySelector("#prevL")?.addEventListener("click", () => { li--; draw(); });
+    app.querySelector("#nextL")?.addEventListener("click", () => { li++; draw(); });
+  }
+  draw();
+}
+</script>
+</body>
+</html>
