@@ -52,10 +52,11 @@ import { auth, db, storage, showConfigWarning, currentUser, loadProfile, logout,
 import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
-document.getElementById("logoutBtn").addEventListener("click", logout);
+document.getElementById("logoutBtn").addEventListener("click", async () => { await signOut(auth); location.reload(); });
 const app = document.getElementById("app");
 const $ = (s, root = document) => root.querySelector(s);
 
@@ -70,18 +71,70 @@ let lessonsUnsub = null;
 let editingLessonId = null;
 let formDirty = false; // admin forma to'ldirayotganda yangi ma'lumot kelsa, yozganlari o'chib ketmasligi uchun
 
+// Admin login: "zohid" kabi login ichki admin emailiga aylantiriladi; parolni Firebase tekshiradi
+const ADMIN_EMAIL_DOMAIN = "admin.kompsavod.uz";
+const loginToEmail = (login) => {
+  const l = login.trim().toLowerCase();
+  return l.includes("@") ? l : `${l}@${ADMIN_EMAIL_DOMAIN}`;
+};
+
+async function enterAsAdmin(user) {
+  const me = await loadProfile(user.uid);
+  if (!me || me.role !== "admin") return false;
+  $("#userChip").textContent = me.name + " (admin)";
+  $("#userChip").hidden = false;
+  $("#logoutBtn").hidden = false;
+  start();
+  return true;
+}
+
+function showAdminLogin(message = "") {
+  $("#userChip").hidden = true;
+  $("#logoutBtn").hidden = true;
+  app.innerHTML = `
+    <div class="auth-card" style="max-width:420px;margin:40px auto">
+      <form id="adminLogin" novalidate>
+        <h1>Admin panel</h1>
+        <p class="lead">Admin login va parolini kiriting.</p>
+        <div class="form-error ${message ? "" : "hidden"}" id="adminError" role="alert">${esc(message)}</div>
+        <div class="field">
+          <label for="adminUser">Login</label>
+          <input id="adminUser" class="input" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="120" autofocus>
+        </div>
+        <div class="field">
+          <label for="adminPass">Parol</label>
+          <input id="adminPass" class="input" type="password" autocomplete="current-password" maxlength="128">
+        </div>
+        <button class="btn btn-indigo" style="width:100%" id="adminBtn" type="submit">Kirish</button>
+      </form>
+    </div>`;
+  const showErr = (m) => { const el = $("#adminError"); el.textContent = m; el.classList.toggle("hidden", !m); };
+  $("#adminLogin").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const login = $("#adminUser").value;
+    const pass = $("#adminPass").value;
+    if (!login.trim() || !pass) return showErr("Login va parolni kiriting.");
+    const btn = $("#adminBtn");
+    btn.disabled = true; btn.textContent = "Kuting…";
+    try {
+      const cred = await signInWithEmailAndPassword(auth, loginToEmail(login), pass);
+      if (!(await enterAsAdmin(cred.user))) {
+        await signOut(auth);
+        showAdminLogin("Bu akkauntda admin huquqi yo‘q.");
+      }
+    } catch (err) {
+      console.error(err);
+      showErr(err?.code === "auth/too-many-requests"
+        ? "Juda ko‘p noto‘g‘ri urinish. Birozdan keyin qayta urinib ko‘ring."
+        : err?.code === "auth/network-request-failed" ? "Internet aloqasi yo‘q." : "Login yoki parol noto‘g‘ri.");
+      btn.disabled = false; btn.textContent = "Kirish";
+    }
+  });
+}
+
 if (!showConfigWarning()) {
   const user = await currentUser();
-  if (!user) location.replace("/kirish");
-  else {
-    const me = await loadProfile(user.uid);
-    if (!me || me.role !== "admin") {
-      app.innerHTML = `<div class="status-card rejected"><h2>Bu sahifa faqat admin uchun</h2><p><a href="/kabinet">Kabinetingizga qaytish</a></p></div>`;
-    } else {
-      $("#userChip").textContent = me.name + " (admin)";
-      start();
-    }
-  }
+  if (!user || !(await enterAsAdmin(user))) showAdminLogin();
 }
 
 function start() {
