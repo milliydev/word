@@ -68,12 +68,17 @@ export function fmtPhone(p) {
  * YouTube yoki Vimeo havolasini xavfsiz embed manziliga aylantiradi.
  * Boshqa saytlar qabul qilinmaydi.
  */
+export function youtubeId(url) {
+  const m = String(url || "").trim().match(/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
 export function videoEmbed(url) {
   const s = String(url || "").trim();
-  let m = s.match(/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
-  if (m) return `https://www.youtube-nocookie.com/embed/${m[1]}?rel=0&modestbranding=1`;
-  m = s.match(/^https?:\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d+)(?:\/([\w]+))?/);
-  if (m) return `https://player.vimeo.com/video/${m[1]}${m[2] ? `?h=${m[2]}` : ""}`;
+  const yt = youtubeId(s);
+  if (yt) return `https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1`;
+  let m = s.match(/^https?:\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d+)(?:\/([\w]+))?/);
+  if (m) return `https://player.vimeo.com/video/${m[1]}?${m[2] ? `h=${m[2]}&` : ""}title=0&byline=0&portrait=0&dnt=1`;
   return null;
 }
 

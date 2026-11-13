@@ -27,7 +27,8 @@
 </main>
 
 <script type="module">
-import { db, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, LOGO_SVG } from "/assets/app.js";
+import { db, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, youtubeId, LOGO_SVG } from "/assets/app.js";
+import { mountYouTubePlayer } from "/assets/player.js";
 import { doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
@@ -91,21 +92,25 @@ async function render(me) {
     return;
   }
 
-  let ci = 0, li = 0;
+  let ci = 0, li = 0, ytPlayer = null;
   function draw() {
+    ytPlayer?.destroy(); ytPlayer = null;
     const c = courses[ci];
     const l = c.lessons[li];
     const fileUrl = l?.videoFile || null;
-    const embed = l ? videoEmbed(l.videoUrl) : null;
+    const ytId = l && !fileUrl ? youtubeId(l.videoUrl) : null;
+    const embed = l && !ytId ? videoEmbed(l.videoUrl) : null;
     app.innerHTML = head + `
       <div class="course-pick" role="tablist" aria-label="Kurslaringiz">
         ${courses.map((x, i) => `<button class="tab" role="tab" aria-selected="${i === ci}" data-c="${i}">${esc(x.title)}</button>`).join("")}
       </div>
       <div class="player-layout">
         <div class="player-main">
-          <div class="video-box">
+          <div class="video-box" id="videoBox">
             ${fileUrl
               ? `<video src="${esc(fileUrl)}" title="${esc(l.title)}" controls controlslist="nodownload" playsinline preload="metadata" style="width:100%;height:100%;background:#000"></video>`
+              : ytId
+              ? ""
               : embed
               ? `<iframe src="${esc(embed)}" title="${esc(l.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`
               : `<div class="video-empty">${c.lessons.length ? "Bu dars uchun video hali qo‘shilmagan." : "Bu kursga hali dars qo‘shilmagan."}</div>`}
@@ -130,6 +135,7 @@ async function render(me) {
     app.querySelectorAll("[data-l]").forEach(b => b.addEventListener("click", () => { li = +b.dataset.l; draw(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
     app.querySelector("#prevL")?.addEventListener("click", () => { li--; draw(); });
     app.querySelector("#nextL")?.addEventListener("click", () => { li++; draw(); });
+    if (ytId) ytPlayer = mountYouTubePlayer(app.querySelector("#videoBox"), ytId, { title: l.title });
   }
   draw();
 }

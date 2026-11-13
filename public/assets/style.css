@@ -292,3 +292,46 @@ input[type="file"].input { padding:9px 12px; cursor:pointer; }
 .socials svg, .footer-links svg { flex: none; }
 .footer-links a { display: inline-flex; align-items: center; gap: 8px; color: inherit; }
 @media (max-width: 760px) { .teacher { grid-template-columns: 1fr; padding: 20px; gap: 22px; } .teacher img { max-width: 320px; margin: 0 auto; } }
+
+/* ===== O'z video pleyerimiz (YouTube interfeysi yashirilgan) ===== */
+.ks-player { outline: none; user-select: none; -webkit-user-select: none; color: #fff; }
+.ks-player:focus-visible { box-shadow: 0 0 0 3px var(--mint); }
+.ksp-stage { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.ksp-stage iframe, .ksp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.ks-player.is-idle .ksp-stage { visibility: hidden; }
+.ksp-shield { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
+.ksp-cover { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; text-align: center; padding: 24px;
+  background: radial-gradient(circle at 50% 40%, #262BA8 0%, #0F1236 75%); transition: opacity .2s; }
+.ks-player.is-paused .ksp-cover { background: rgba(10,12,40,.55); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.ks-player.is-ended .ksp-cover { background: radial-gradient(circle at 50% 40%, #262BA8 0%, #0F1236 75%); }
+.ks-player.is-playing .ksp-cover { opacity: 0; pointer-events: none; }
+.ksp-big { width: 76px; height: 76px; border-radius: 50%; border: 0; background: var(--mint); color: var(--ink-on-mint); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .12s; }
+.ksp-big:hover { transform: scale(1.06); }
+.ksp-big svg { width: 34px; height: 34px; }
+.ksp-msg { margin: 0; font-weight: 700; color: var(--on-dark-muted); min-height: 1em; }
+.ksp-msg:empty { display: none; }
+.ks-player.is-loading.is-playing .ksp-shield::after { content: ""; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px; border-radius: 50%; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: ksp-spin .8s linear infinite; }
+@keyframes ksp-spin { to { transform: rotate(360deg); } }
+.ksp-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 28px 12px 10px;
+  background: linear-gradient(transparent, rgba(5,7,30,.85)); transition: opacity .2s; }
+.ks-player.is-idle .ksp-bar { opacity: 0; pointer-events: none; }
+.ks-player.is-playing:not(.show-bar) .ksp-bar { opacity: 0; }
+.ks-player.is-playing:not(.show-bar) { cursor: none; }
+.ksp-btn { flex: none; min-width: 38px; height: 38px; padding: 0 6px; border: 0; border-radius: 10px; background: none; color: #fff; font: inherit; font-weight: 800; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ksp-btn:hover { background: rgba(255,255,255,.15); }
+.ksp-btn svg { width: 22px; height: 22px; }
+.ksp-time { flex: none; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ksp-seek, .ksp-vol { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 99px; cursor: pointer; margin: 0;
+  background: linear-gradient(to right, var(--mint) var(--p, 0%), rgba(255,255,255,.3) var(--p, 0%)); }
+.ksp-seek { flex: 1; min-width: 60px; }
+.ksp-vol { width: 70px; flex: none; background: rgba(255,255,255,.45); }
+.ksp-seek::-webkit-slider-thumb, .ksp-vol::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; }
+.ksp-seek::-moz-range-thumb, .ksp-vol::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; }
+.ks-player:fullscreen { border-radius: 0; aspect-ratio: auto; width: 100%; height: 100%; }
+.ks-player.ksp-pseudo-fs { position: fixed; inset: 0; z-index: 2000; border-radius: 0; aspect-ratio: auto; width: 100vw; height: 100dvh; }
+@media (max-width: 560px) {
+  .ksp-vol { display: none; }
+  .ksp-bar { gap: 4px; padding: 24px 6px 6px; }
+  .ksp-time { font-size: 12px; }
+  .ksp-big { width: 64px; height: 64px; }
+}
