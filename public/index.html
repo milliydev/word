@@ -168,7 +168,7 @@
 </div>
 
 <script type="module">
-import { db, isConfigured, showConfigWarning, currentUser, loadProfile, esc, fmtDate, toast, LOGO_SVG } from "/assets/app.js";
+import { db, isConfigured, showConfigWarning, currentUser, loadProfile, esc, fmtDate, toast, LOGO_SVG, courseIcon } from "/assets/app.js";
 import { collection, query, where, orderBy, getDocs, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 document.getElementById("brand").insertAdjacentHTML("afterbegin", LOGO_SVG);
@@ -257,7 +257,10 @@ if (showConfigWarning()) {
     } else {
       grid.innerHTML = courses.map(c => `
         <article class="card-glass glass course-card">
-          <div class="meta">${esc(c.lessonCount || 0)} ta dars</div>
+          <div class="course-head">
+            <div class="course-ico">${courseIcon(c, 56)}</div>
+            <div class="meta">${esc(c.lessonCount || 0)} ta dars</div>
+          </div>
           <h3>${esc(c.title)}</h3>
           <p>${esc(c.description)}</p>
           ${c.price ? `<div class="price">${esc(c.price)}</div>` : ""}

@@ -48,7 +48,7 @@
 </dialog>
 
 <script type="module">
-import { auth, db, storage, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, toast, STATUS_LABELS, LOGO_SVG } from "/assets/app.js";
+import { auth, db, storage, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, toast, STATUS_LABELS, LOGO_SVG, courseIcon, COURSE_ICONS } from "/assets/app.js";
 import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -291,8 +291,8 @@ function renderCourses() {
           <h2>Kurslar</h2>
           ${courses.length ? `<ol class="lesson-list">${courses.map(x => `
             <li><button data-course="${esc(x.id)}" aria-current="${x.id === editingCourseId}">
-              <span class="no">${esc(x.order ?? "")}</span>
-              <span>${esc(x.title)}<br><small style="color:var(--muted)">${esc(x.lessonCount || 0)} dars · ${x.published ? "saytda" : "yashirin"}</small></span>
+              <span class="list-ico">${courseIcon(x, 28)}</span>
+              <span>${esc(x.order ?? "")}. ${esc(x.title)}<br><small style="color:var(--muted)">${esc(x.lessonCount || 0)} dars · ${x.published ? "saytda" : "yashirin"}</small></span>
             </button></li>`).join("")}</ol>` : `<p style="color:var(--muted);margin:0 0 12px">Hali kurs yo‘q. Birinchi kursni qo‘shing.</p>`}
           <button class="btn btn-mint" style="width:100%;margin-top:12px" id="newCourse">Yangi kurs qo‘shish</button>
         </div>
@@ -301,6 +301,14 @@ function renderCourses() {
         <form class="panel" id="courseForm" novalidate>
           <h2>${c ? "Kursni tahrirlash" : "Yangi kurs"}</h2>
           <div class="field"><label for="cTitle">Kurs nomi</label><input id="cTitle" class="input" maxlength="120" required value="${esc(c?.title || "")}"></div>
+          <div class="field">
+            <label for="cIcon">Kurs rasmi</label>
+            <div class="icon-pick">
+              <span class="course-ico" id="cIconPreview">${courseIcon(c || {}, 48)}</span>
+              <select id="cIcon" class="input">${COURSE_ICONS.map(([k, label]) => `<option value="${k}" ${(c?.icon || "auto") === k ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
+            </div>
+            <span class="hint">“Avtomatik” bo‘lsa, nomida “Word” so‘zi bor kursga Word rasmi qo‘yiladi (Excel, PowerPoint, Windows, Internet ham).</span>
+          </div>
           <div class="field"><label for="cDesc">Qisqacha tavsif</label><textarea id="cDesc" class="input" maxlength="600">${esc(c?.description || "")}</textarea></div>
           <div class="form-row">
             <div class="field"><label for="cPrice">Narxi</label><input id="cPrice" class="input" maxlength="60" placeholder="Masalan: 299 000 so‘m" value="${esc(c?.price || "")}"></div>
@@ -318,6 +326,9 @@ function renderCourses() {
   app.querySelectorAll("[data-course]").forEach(b => b.addEventListener("click", () => selectCourse(b.dataset.course)));
   $("#newCourse").addEventListener("click", () => selectCourse(null));
   $("#courseForm").addEventListener("submit", saveCourse);
+  const syncIcon = () => { $("#cIconPreview").innerHTML = courseIcon({ title: $("#cTitle").value, icon: $("#cIcon").value }, 48); };
+  $("#cIcon").addEventListener("change", syncIcon);
+  $("#cTitle").addEventListener("input", syncIcon);
   app.querySelectorAll("#courseForm, #lessonForm").forEach(f => f.addEventListener("input", () => { formDirty = true; }));
   if (c) bindLessons(c);
 }
@@ -344,6 +355,7 @@ async function saveCourse(e) {
     title,
     description: $("#cDesc").value.trim(),
     price: $("#cPrice").value.trim(),
+    icon: $("#cIcon").value,
     order: Math.max(0, parseInt($("#cOrder").value, 10) || 0),
     published: $("#cPublished").checked,
     updatedAt: serverTimestamp()

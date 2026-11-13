@@ -27,7 +27,7 @@
 </main>
 
 <script type="module">
-import { db, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, youtubeId, LOGO_SVG } from "/assets/app.js";
+import { db, showConfigWarning, currentUser, loadProfile, logout, esc, fmtPhone, fmtDate, videoEmbed, youtubeId, LOGO_SVG, courseIcon } from "/assets/app.js";
 import { mountYouTubePlayer } from "/assets/player.js";
 import { doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -102,7 +102,7 @@ async function render(me) {
     const embed = l && !ytId ? videoEmbed(l.videoUrl) : null;
     app.innerHTML = head + `
       <div class="course-pick" role="tablist" aria-label="Kurslaringiz">
-        ${courses.map((x, i) => `<button class="tab" role="tab" aria-selected="${i === ci}" data-c="${i}">${esc(x.title)}</button>`).join("")}
+        ${courses.map((x, i) => `<button class="tab tab-ico" role="tab" aria-selected="${i === ci}" data-c="${i}">${courseIcon(x, 22)}${esc(x.title)}</button>`).join("")}
       </div>
       <div class="player-layout">
         <div class="player-main">
