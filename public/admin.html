@@ -307,7 +307,7 @@ function renderCourses() {
               <span class="course-ico" id="cIconPreview">${courseIcon(c || {}, 48)}</span>
               <select id="cIcon" class="input">${COURSE_ICONS.map(([k, label]) => `<option value="${k}" ${(c?.icon || "auto") === k ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
             </div>
-            <span class="hint">“Avtomatik” bo‘lsa, nomida “Word” so‘zi bor kursga Word rasmi qo‘yiladi (Excel, PowerPoint, Windows, Internet ham).</span>
+            <span class="hint">“Avtomatik” bo‘lsa, nomida “Word” so‘zi bor kursga Word rasmi qo‘yiladi (Excel, Google Sheets, PowerPoint, Windows, Internet ham).</span>
           </div>
           <div class="field"><label for="cDesc">Qisqacha tavsif</label><textarea id="cDesc" class="input" maxlength="600">${esc(c?.description || "")}</textarea></div>
           <div class="form-row">

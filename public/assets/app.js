@@ -119,6 +119,7 @@ export const COURSE_ICONS = [
   ["auto", "Avtomatik (kurs nomiga qarab)"],
   ["word", "Word"],
   ["excel", "Excel"],
+  ["sheets", "Google Sheets"],
   ["powerpoint", "PowerPoint"],
   ["windows", "Windows"],
   ["internet", "Internet"],
@@ -130,6 +131,7 @@ export function courseIconKey(course) {
   const k = course?.icon;
   if (k && k !== "auto" && COURSE_ICONS.some(([x]) => x === k)) return k;
   const t = String(course?.title || "").toLowerCase();
+  if (/sheets?\b|google\s*(jadval|table)|гугл\s*(шит|табл)/.test(t)) return "sheets";
   if (/word|ворд|vord/.test(t)) return "word";
   if (/excel|eksel|эксел|ексел/.test(t)) return "excel";
   if (/power\s*point|pptx?\b|taqdimot|презентац/.test(t)) return "powerpoint";
@@ -159,6 +161,13 @@ export function courseIcon(course, size = 64) {
       return wrap(`${sheet(["#33C481", "#21A366", "#107C41", "#185C37"])}
         <rect x="27.5" y="5" width="1.2" height="38" fill="#0B5A2F" opacity=".35"/>
         ${tile("#18884F", "#0F6234", "M8.4 18.2h3l2.6 4.3 2.6-4.3h2.9l-4 6 4.1 6.1h-3l-2.7-4.4-2.7 4.4H8.3l4.1-6.1z")}`);
+    case "sheets":
+      return wrap(`<path d="M12 3h17.5L39 12.5V42a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z" fill="#0F9D58"/>
+        <path d="M31 12.5l8 8v-8z" fill="#0B7A44" opacity=".55"/>
+        <path d="M29.5 3v7.5a2 2 0 0 0 2 2H39z" fill="#87CEAC"/>
+        <rect x="15" y="21" width="18" height="15" rx="1.2" fill="#fff"/>
+        <g fill="#0F9D58"><rect x="21.6" y="23.4" width="1.6" height="11"/><rect x="17.2" y="26" width="13.6" height="1.6"/><rect x="17.2" y="30.2" width="13.6" height="1.6"/></g>
+        <g fill="#fff"><rect x="15" y="21" width="18" height="2.4"/></g>`);
     case "powerpoint":
       return wrap(`<circle cx="28" cy="24" r="17" fill="#ED6C47"/>
         <path d="M28 24V7a17 17 0 0 1 17 17z" fill="#FF8F6B"/>
