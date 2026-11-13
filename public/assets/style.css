@@ -337,3 +337,12 @@ input[type="file"].input { padding:9px 12px; cursor:pointer; }
   .ksp-time { font-size: 12px; }
   .ksp-big { width: 64px; height: 64px; }
 }
+/* YouTube'ning o'rtadagi belgisini yopuvchi o'z belgimiz */
+.ksp-badge { position: absolute; left: 50%; top: 50%; z-index: 3; width: clamp(84px, 11%, 140px); aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%; background: #0F1236; color: #fff; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 6px rgba(15,18,54,.35); pointer-events: none; opacity: 0; transition: opacity .25s; }
+.ksp-badge svg { width: 38%; height: 38%; }
+.ks-player.is-playing.show-badge .ksp-badge { opacity: 1; }
+.ks-player.is-loading .ksp-badge svg { display: none; }
+.ks-player.is-loading .ksp-badge::after { content: ""; width: 42%; height: 42%; border-radius: 50%; border: 4px solid rgba(255,255,255,.25); border-top-color: var(--mint); animation: ksp-spin .8s linear infinite; }
+.ks-player.is-loading.is-playing .ksp-shield::after { display: none; }

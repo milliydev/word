@@ -49,6 +49,7 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
   box.innerHTML = `
     <div class="ksp-stage"><div class="ksp-frame"></div></div>
     <div class="ksp-shield" aria-hidden="true"></div>
+    <div class="ksp-badge" aria-hidden="true">${ICONS.pause}</div>
     <div class="ksp-cover">
       <button class="ksp-big" type="button" aria-label="Ijro etish">${ICONS.play}</button>
       <p class="ksp-msg"></p>
@@ -68,7 +69,15 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
   const playBtn = $(".ksp-play"), seek = $(".ksp-seek"), cur = $(".ksp-cur"), dur = $(".ksp-dur");
   const muteBtn = $(".ksp-mute"), vol = $(".ksp-vol"), speedBtn = $(".ksp-speed"), fsBtn = $(".ksp-fs");
 
-  let player = null, ready = false, timer = null, hideT = null, seeking = false, destroyed = false, speedIdx = 1, pendingPlay = false;
+  let player = null, ready = false, timer = null, hideT = null, seeking = false, destroyed = false, speedIdx = 1, pendingPlay = false, badgeT = null;
+  // YouTube ijro boshlanganda, vaqt o'zgarganda yoki yuklanayotganda video o'rtasida
+  // ~6 soniya o'z belgisini ko'rsatadi — o'sha joyni o'z belgimiz bilan yopamiz.
+  const badge = box.querySelector(".ksp-badge");
+  const showBadge = () => {
+    box.classList.add("show-badge");
+    clearTimeout(badgeT);
+    badgeT = setTimeout(() => box.classList.remove("show-badge"), 7000);
+  };
 
   const setState = (s) => {
     box.classList.remove("is-idle", "is-playing", "is-paused", "is-ended", "is-loading");
@@ -118,7 +127,7 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
     seek.style.setProperty("--p", `${seek.value / 10}%`);
   });
   seek.addEventListener("change", () => {
-    if (ready) player.seekTo((seek.value / 1000) * player.getDuration(), true);
+    if (ready) { player.seekTo((seek.value / 1000) * player.getDuration(), true); showBadge(); }
     seeking = false;
   });
 
@@ -176,7 +185,7 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
     else if (ready && (k === "arrowright" || k === "arrowleft")) {
       e.preventDefault();
       player.seekTo(player.getCurrentTime() + (k === "arrowright" ? 5 : -5), true);
-      tick();
+      tick(); showBadge();
     }
     showBar();
   });
@@ -205,10 +214,10 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
         },
         onStateChange: (e) => {
           // -1 boshlanmagan, 0 tugadi, 1 ijro, 2 pauza, 3 yuklanmoqda, 5 tayyor
-          if (e.data === 1) { setState("playing"); showBar(); }
+          if (e.data === 1) { setState("playing"); showBar(); showBadge(); }
           else if (e.data === 2) setState("paused");
           else if (e.data === 0) { setState("ended"); tick(); onEnded?.(); }
-          else if (e.data === 3) box.classList.add("is-loading");
+          else if (e.data === 3) { box.classList.add("is-loading"); showBadge(); }
         },
         onError: () => { setState("idle"); msg.textContent = "Videoni ochib bo‘lmadi. Keyinroq urinib ko‘ring."; }
       }
@@ -218,7 +227,7 @@ export function mountYouTubePlayer(box, videoId, { title = "", onEnded } = {}) {
   return {
     destroy() {
       destroyed = true;
-      clearInterval(timer); clearTimeout(hideT);
+      clearInterval(timer); clearTimeout(hideT); clearTimeout(badgeT);
       document.removeEventListener("fullscreenchange", syncFs);
       document.removeEventListener("webkitfullscreenchange", syncFs);
       document.body.style.overflow = "";
